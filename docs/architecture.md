@@ -263,3 +263,95 @@ Contract 05 metrics:
 `e2e_lag_ms` is `now - newest sample ts` for a successful batch, so it includes
 both the stream backlog and the insert time. `consumer_pending` counts messages
 not yet delivered; a steady rise means the writer is slower than the scraper.
+
+## Query path and tier selection
+
+The query service is a read-only HTTP server in front of ClickHouse. A request
+flows through four steps:
+
+1. `ParseSeriesParams` validates the query string and resolves relative ranges
+   against one injected clock. Every failure is `400 invalid_argument`.
+2. `PlanQuery` — a **pure function** of `(now, from, to, max_points)` — picks the
+   storage tier and bucket step. It never touches the network or the clock.
+3. `store.Client.Series` runs the contract-04 SQL for that tier with bound
+   parameters. The table comes from a whitelist switch; the step can only be a
+   value from the allowed list, so no request text reaches SQL.
+4. The handler reshapes rows into one JSON series per requested pair, rounds to
+   two decimals, and writes the response.
+
+### Tiers
+
+| name | table | resolution | retention |
+|------|-------|------------|-----------|
+| `raw` | `samples_raw` | 1 s | 7 d (604 800 s) |
+| `1m` | `samples_1m` | 60 s | 90 d (7 776 000 s) |
+| `1h` | `samples_1h` | 3600 s | 400 d (34 560 000 s) |
+
+Allowed bucket steps, in seconds: `1, 5, 10, 30, 60, 300, 900, 3600, 21600`.
+The largest step is six hours, which is why a one-year chart returns 1460
+points even though the default `max_points` is 1000.
+
+### Algorithm
+
+```
+age   = now - from
+step  = smallest allowed step with (to - from) / step <= max_points
+        (when none qualifies, 21600)
+tier  = coarsest tier with resolution <= step AND age <= retention
+if no such tier:                       # window too old for the wanted step
+    tier = finest tier with age <= retention
+    step = max(step, tier.resolution)
+if still none: 400 invalid_argument
+```
+
+"Coarsest" means fewest rows to read: a one-hour bucket is 3600 raw rows. The
+first branch therefore keeps the query cheap without losing the resolution the
+caller asked for. The fallback only fires for old, narrow windows such as
+`[now-120d, now-110d]`, where the wanted 900 s step is finer than the only
+remaining tier stores; there the step is raised to 3600 s rather than reading a
+finer table that no longer has the data.
+
+### Worked example: `range=1y`
+
+Take `now = 1760000000`:
+
+- `from = 1760000000 - 365*86400 = 1728464000`, so `window = 31 536 000 s`.
+- `step`: every step up to 3600 leaves more than 1000 buckets; `31 536 000 /
+  21 600 = 1460`, which is still above 1000 but no larger step exists, so `step
+  = 21 600` (6 h).
+- `age = 31 536 000 s`, which is within the 400-day retention.
+- The coarsest tier with `resolution <= 21 600` and `age <= retention` is `1h`.
+- The reader scans `31 536 000 / 3600 = 8760` hourly rows per series and
+  re-aggregates them into 1460 six-hour buckets.
+
+The response is `source:"1h"`, `step_seconds:21600`. For 7 sensors on one
+device that is 7 × 8760 rows, not 7 × 31.5 million raw rows — the reason the
+one-year chart meets its latency target.
+
+### Rollups are always re-aggregated
+
+Both rollup tiers are read with `sum(sum_v) / sum(cnt)`, `min(min_v)` and
+`max(max_v)`. Materialized-view merges are asynchronous, so a bucket may still
+be split across several rows; re-aggregating is exact for `min`, `max` and the
+count-weighted average, and does not depend on merge timing.
+
+### Failure handling
+
+The ClickHouse call runs under `context.WithTimeout` from `QUERY_TIMEOUT`
+(default 10 s). `context.DeadlineExceeded` becomes `504 timeout`; any other
+store error is logged with the table and step and returned to the client as
+`500 internal error` with no SQL or driver text. A panic in a handler is
+recovered, logged with its stack, and also becomes `500 internal error`.
+`/readyz` pings ClickHouse and returns `503` when it is unreachable.
+
+### Telemetry
+
+`/statusz` and `/healthz` are served on `HTTP_ADDR` (default `:8080`). Contract
+05 metrics:
+
+- counters: `requests_total`, `requests_failed`
+- timings: `series_ms`, `devices_ms`
+
+`requests_failed` counts every response with status `>= 400`, including client
+mistakes, so pair it with `requests_total` rather than treating it as a pure
+availability signal.
