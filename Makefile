@@ -42,9 +42,8 @@ logs: ## Follow stack logs
 reset: ## Stop the stack and delete its volumes
 	docker compose down -v
 
-smoke: ## Run the end-to-end smoke test
-	@echo "not implemented yet (T16)"
-	@exit 1
+smoke: ## Run the end-to-end smoke test (ARGS="--with-year --chaos")
+	GO="$(GO)" ./scripts/smoke.sh $(ARGS)
 
 loadtest: ## Run the load test
 	@echo "not implemented yet (T17)"
