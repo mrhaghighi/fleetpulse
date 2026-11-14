@@ -2,8 +2,8 @@
 
 FleetPulse is a small monitoring stack with one job: turn host sensor readings
 into queryable history. This page describes how the pieces fit together.
-Sections are added as their components land; the "Message bus" section below
-covers the scraper-to-writer path.
+Sections are added as their components land; the "Scraper" and "Message bus"
+sections below cover the collection path from exporter to writer.
 
 ## Message bus
 
@@ -91,3 +91,102 @@ ack, JetStream redelivers the message after `AckWait`. The writer's
 `consumer_pending` gauge comes from `Consumer.Pending`, which reports messages
 that have not been delivered yet; it is the earliest signal that the writer is
 falling behind.
+
+## Scraper
+
+The scraper is the only component that talks to exporters. It discovers
+targets, pulls each one on a fixed interval, and publishes one message per
+successful scrape to `metrics.samples` through `internal/bus`. Its only local
+state is a cursor per target; everything else can be rebuilt from the exporters'
+buffers and the bus.
+
+### Targets and discovery
+
+Targets come from two places: a static `targets` list in the YAML config and any
+number of HTTP discovery sources under `discovery.http`. Each source is
+refreshed on its own `refresh` schedule. Targets are identified by their base
+URL, so the same host listed by two sources is scraped once.
+
+- A URL that appears for the first time starts scraping immediately.
+- A URL that disappears from a source is kept for one refresh and stopped on the
+  second consecutive miss. This absorbs a single bad discovery response without
+  tearing down the fleet.
+- A failed discovery request keeps the previous list and logs at `Warn`.
+- Static targets are never removed.
+
+### Scheduling and concurrency
+
+There is one goroutine per target, which is cheap enough for the 10 000-target
+design point. Each goroutine waits a random jitter in `[0, interval)` before its
+first scrape, so a fleet discovered at once does not fire in lockstep. After
+that it scrapes every `interval`.
+
+A buffered semaphore of size `concurrency` bounds simultaneous scrapes, and all
+targets share one `http.Client` with keep-alive enabled, `MaxIdleConnsPerHost`
+of 4 and HTTP/2 disabled. The client is the only place connections are pooled.
+
+### One scrape
+
+1. `GET <base>/v1/samples?since=<cursor>` with a per-request timeout.
+2. Decode `model.SamplesResponse` from contract 01.
+3. Drop samples that fail `model.Sample.Validate()`, and log the dropped count
+   at `Debug`.
+4. If no valid samples remain, advance the cursor to `next_since` and publish
+   nothing. Contract 02 forbids empty messages.
+5. Otherwise publish `model.BusMessage{V: 1, Device, ScrapedAt: now, Samples}`.
+6. **Only after the publish succeeds**, set the cursor to `next_since`.
+
+The ordering in step 6 is the losslessness guarantee. A crash or a publish
+failure leaves the cursor where it was, so the next scrape asks for the same
+range again. JetStream's 2-minute `Nats-Msg-Id` dedupe window absorbs the
+resulting retry when the first publish actually reached NATS.
+
+A `truncated: true` response means the exporter's 300-second buffer no longer
+holds the samples the scraper asked for. The scraper increments
+`truncated_scrapes` and logs at `Warn`, throttled to once per target per five
+minutes.
+
+### Failure and recovery
+
+HTTP errors, timeouts, non-200 responses and decode errors use a per-target
+exponential backoff: the first retry is after `interval`, then 2×, 4× and so on,
+capped at 60 seconds. A successful scrape resets the backoff to `interval`.
+
+The cursor is never moved by a failure, so a target that comes back re-reads
+from the last published second. Short outages are invisible because the
+exporter buffer holds 300 seconds. Longer outages are visible as a rise in
+`truncated_scrapes`.
+
+Publish failures are different: they increment `publish_failed` and retry at the
+normal interval, because NATS being briefly unavailable should not slow down the
+scrape schedule.
+
+### Cursors
+
+Cursors are an in-memory map of target URL to `next_since`. They are snapshotted
+to `SCRAPER_CURSOR_FILE` every 10 seconds and once more on shutdown. Each
+snapshot writes a temporary file in the same directory and renames it over the
+real file, so a crash never leaves a half-written cursor file.
+
+On startup a missing or corrupt file is not fatal: the scraper logs at `Warn`
+and starts empty. The first scrape then asks for the whole exporter buffer,
+which produces duplicates that ADR-0007 accepts.
+
+On SIGTERM the scraper stops discovery and target tickers, gives in-flight
+scrapes up to 10 seconds to finish, then writes the final snapshot. A scrape
+that was already talking to an exporter is allowed to complete because it runs
+on a context detached from the shutdown signal but still bounded by `timeout`.
+
+### Telemetry
+
+`/statusz` and `/healthz` are served on `HTTP_ADDR` (default `:9300`).
+Contract 05 metrics:
+
+- counters: `scrapes_ok`, `scrapes_failed`, `samples_published`,
+  `publish_failed`, `truncated_scrapes`
+- gauge: `targets`
+- timings: `scrape_ms`, `publish_ms`
+
+`targets` is the number of URLs currently scheduled. It rises and falls with
+discovery, so a sudden drop is the first sign that a discovery source is
+returning bad data.

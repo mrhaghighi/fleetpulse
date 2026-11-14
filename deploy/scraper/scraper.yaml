@@ -1,0 +1,10 @@
+# Scraper configuration (contract 05).
+interval: 10s        # how often each target is pulled
+timeout: 5s          # per HTTP request
+concurrency: 256     # max simultaneous scrapes
+targets:             # static targets, for example:
+  # - url: http://10.0.0.5:9100
+discovery:           # HTTP service discovery; endpoint returns [{"device_id":"..","url":".."}]
+  http:
+    - url: http://simulator:9200/targets
+      refresh: 30s
