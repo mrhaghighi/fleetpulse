@@ -190,3 +190,76 @@ Contract 05 metrics:
 `targets` is the number of URLs currently scheduled. It rises and falls with
 discovery, so a sudden drop is the first sign that a discovery source is
 returning bad data.
+
+## Writer
+
+The writer is the only component that writes ClickHouse. It drains the durable
+`writer` consumer, un-pivots each message into narrow rows, and inserts them in
+large batches. It never talks to exporters and never imports a NATS client
+outside `internal/bus`.
+
+### Batching
+
+`internal/store` owns the two table writes; `internal/writer` owns the batching
+loop:
+
+1. `Fetch` up to `WRITER_FETCH_MSGS` messages, waiting at most 500 ms.
+2. Classify each delivery. A decode error, an unknown `v` or a message that
+   fails `model.BusMessage.Validate()` is poison and goes to the DLQ. A valid
+   message is un-pivoted by `store.Rows` and appended to the batch.
+3. Flush when the batch holds at least `WRITER_BATCH_ROWS` sample rows **or**
+   when `WRITER_BATCH_WAIT` has elapsed since the first buffered message.
+4. De-duplicate the device rows (latest `LastSeen` per `device_id`), insert the
+   sample batch into `samples_raw` and the device batch into `devices`, then ack
+   every delivery in the batch.
+
+The fetch wait is shortened to the remaining batch-wait time, so a small
+`WRITER_BATCH_WAIT` is not rounded up to 500 ms.
+
+### Ack after insert
+
+The ack is the last step. If the insert fails, no delivery in the batch is
+acked: the writer logs at `Error`, increments `batches_failed`, and retries the
+**same** rows with exponential backoff from 500 ms to 30 s. It never drops the
+batch and never acks early. Because the messages stay unacked, JetStream keeps
+them and redelivers them if the writer dies.
+
+A crash between a successful insert and the acks redelivers the batch and
+inserts identical rows. That is the at-least-once contract from contract 02 and
+ADR-0007: `min`, `max` and `sum` are unchanged by identical duplicates; only
+`cnt` can be slightly inflated.
+
+### Poison messages
+
+A payload that can never succeed is republished unchanged to `metrics.dlq`
+with `Dlq-Reason` and `Dlq-Origin: writer`, then `Term`ed so it stops being
+redelivered. Poison handling does not block the batch: the other deliveries in
+the same fetch are still inserted and acked.
+
+If the DLQ publish itself fails, the writer leaves the delivery unacked and
+logs at `Warn`. It is retried later instead of being lost.
+
+### Shutdown
+
+On SIGTERM the writer stops fetching, inserts the buffered batch within a
+five-second budget, acks it, and exits. If the insert cannot finish in that
+window, the batch stays unacked and JetStream redelivers it. Nothing is lost.
+
+### Scaling out
+
+Several writers may share the durable `writer` consumer. JetStream delivers
+each message to exactly one instance, so scale-out needs no partitioning.
+
+### Telemetry
+
+`/statusz` and `/healthz` are served on `HTTP_ADDR` (default `:9400`).
+Contract 05 metrics:
+
+- counters: `msgs_received`, `rows_inserted`, `batches_ok`, `batches_failed`,
+  `dlq_messages`
+- gauge: `consumer_pending`, polled every five seconds
+- timings: `insert_ms`, `batch_rows`, `e2e_lag_ms`
+
+`e2e_lag_ms` is `now - newest sample ts` for a successful batch, so it includes
+both the stream backlog and the insert time. `consumer_pending` counts messages
+not yet delivered; a steady rise means the writer is slower than the scraper.
