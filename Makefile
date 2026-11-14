@@ -50,9 +50,15 @@ loadtest: ## Run the load test
 	@echo "not implemented yet (T17)"
 	@exit 1
 
-backfill-year: ## Backfill one year of data
-	@echo "not implemented yet (T14)"
-	@exit 1
+backfill-year: ## Backfill one year of history (forces a rebuild)
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
+	docker compose run --rm seed \
+		--devices "$${SIM_DEVICES:-20}" \
+		--seed "$${SIM_SEED:-1}" \
+		--fanless-ratio "$${SIM_FANLESS_RATIO:-0.1}" \
+		--raw-days 3 \
+		--rollup-days 365 \
+		--force
 
 dist: ## Build release binaries and checksums
 	GO="$(GO)" VERSION="$(VERSION)" ./scripts/dist.sh
