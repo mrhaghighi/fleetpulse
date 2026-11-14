@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	connectBackoffMin = 100 * time.Millisecond
-	connectBackoffMax = 5 * time.Second
-	reconnectWait     = 2 * time.Second
+	connectBackoffInitial = 100 * time.Millisecond
+	connectBackoffMax     = 5 * time.Second
+	reconnectWait         = 2 * time.Second
 )
 
 // Config describes the NATS connection and the JetStream stream replica count.
@@ -61,7 +61,7 @@ func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Client, error)
 		}),
 	}
 
-	backoff := connectBackoffMin
+	backoff := connectBackoffInitial
 	for {
 		nc, err := nats.Connect(cfg.URL, opts...)
 		if err == nil {
