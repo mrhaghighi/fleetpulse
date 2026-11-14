@@ -1,0 +1,26 @@
+[Unit]
+Description=FleetPulse exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fleetpulse
+Group=fleetpulse
+ExecStart=/usr/local/bin/fleetpulse-exporter --listen :9100
+Restart=always
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+LockPersonality=true
+CapabilityBoundingSet=
+SyslogIdentifier=fleetpulse-exporter
+
+[Install]
+WantedBy=multi-user.target

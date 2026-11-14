@@ -1,0 +1,93 @@
+# Architecture
+
+FleetPulse is a small monitoring stack with one job: turn host sensor readings
+into queryable history. This page describes how the pieces fit together.
+Sections are added as their components land; the "Message bus" section below
+covers the scraper-to-writer path.
+
+## Message bus
+
+The scraper and the writer never talk to each other directly and never import a
+NATS client outside `internal/bus`. The scraper publishes one JSON message per
+successful device scrape to `metrics.samples`; the writer pulls those messages
+in batches, inserts them into ClickHouse, and acknowledges them only after the
+insert succeeds. Contract 02 is the source of truth for names, settings and
+payloads.
+
+### Streams
+
+| stream | subjects | storage | retention | max age | duplicate window | replicas |
+|--------|----------|---------|-----------|---------|------------------|----------|
+| `METRICS` | `metrics.samples` | file | limits | 48h | 2m | `NATS_REPLICAS` (default 1) |
+| `METRICS_DLQ` | `metrics.dlq` | file | limits | 7d | 2m | same |
+
+`EnsureStreams` uses `CreateOrUpdateStream`, so every scraper and writer start
+converges the streams to this contract instead of failing when they already
+exist. Why each setting:
+
+- **File storage.** JetStream survives a NATS restart. An in-memory stream
+  would lose the replay buffer and any messages the writer had not consumed.
+- **Limits retention.** Limits is the normal streaming policy: messages are
+  removed by age, not by being consumed. That keeps the 48h replay buffer
+  intact even while the writer is caught up.
+- **48h max age on `METRICS`.** The stream is not only a queue; it is the replay
+  buffer for the storage-migration plan (ADR-0004). Two days is long enough to
+  survive a weekend writer outage and to replay raw data after a schema change,
+  without turning NATS into a second database.
+- **7d max age on `METRICS_DLQ`.** Dead letters are rare but must outlive a
+  normal investigation. A week covers a holiday gap while still bounding disk
+  use. The DLQ is a diagnostic aid, not an archive.
+- **2m duplicate window.** The scraper retries a failed publish with the same
+  `Nats-Msg-Id` (`<device_id>:<last sample ts>`). A two-minute window absorbs
+  those retries and duplicate discovery targets, so the writer does not insert
+  the same scrape twice during normal operation.
+- **Replicas from `NATS_REPLICAS`.** A single-node development stack needs one
+  replica; a production cluster can set three for stream availability. The
+  value is configuration, not a constant, because it depends on the NATS
+  deployment rather than on FleetPulse.
+
+### Consumer
+
+`NewConsumer` creates or updates one durable pull consumer named `writer` on
+`METRICS`:
+
+| setting | value | why |
+|---------|-------|-----|
+| durable name | `writer` | The writer's position survives restarts, so a crash resumes where it stopped instead of replaying or skipping history. |
+| ack policy | `AckExplicit` | A message is acknowledged only after the ClickHouse insert succeeded. Implicit acks would lose data on a failed insert. |
+| ack wait | 60s | A batch insert into ClickHouse can be slow under load. 60s is long enough for a healthy insert and short enough that a crashed writer's in-flight messages are redelivered promptly. |
+| max deliver | 10 | Bounds how often a poison message is retried. After ten attempts JetStream stops redelivering it; the message remains visible for operators and ages out with the stream. |
+| max ack pending | 20000 | Caps in-flight unacknowledged messages per consumer. It is large enough for batching and small enough to bound memory and the amount of work a stalled writer can hold. |
+| deliver policy | `all` | A newly created consumer starts at the beginning of the 48h buffer, so a writer deployed against an existing stream does not silently skip history. An existing durable resumes from its stored ack floor. |
+| pull, not push | pull | The writer controls batch size and pace. Pull consumers give natural backpressure; a push consumer would flood a slow writer. |
+
+Several writer instances may create a consumer with the same durable name. NATS
+treats them as one consumer, so each message is delivered to exactly one
+instance: this is work-queue scale-out without partitioning or coordination.
+
+### Message identity and duplicates
+
+The publish header `Nats-Msg-Id` is `<device_id>:<last sample ts>`. JetStream
+drops a second publish with the same ID inside the 2m window. That protects the
+normal retry path; it does not make delivery exactly-once. A crash between the
+ClickHouse insert and the ack redelivers the batch and inserts identical rows.
+This is accepted by contract 02 and ADR-0007: `avg`, `min` and `max` are
+unchanged by identical duplicates, and only `cnt` can be slightly inflated.
+
+### Dead letters
+
+The writer republishes the original payload bytes unchanged to `metrics.dlq`
+with two headers: `Dlq-Reason` (short text) and `Dlq-Origin: writer`. It then
+`Term`s the original delivery so JetStream stops redelivering it. This path is
+for payloads that can never succeed: invalid JSON, an unknown `v`, or a message
+that fails validation entirely. Transient failures such as a ClickHouse outage
+are retried with `Nak`, not dead-lettered.
+
+### Delivery semantics
+
+The end-to-end guarantee is at-least-once. The writer fetches a batch, inserts
+it, and only then acks each delivery. If the writer dies at any point before the
+ack, JetStream redelivers the message after `AckWait`. The writer's
+`consumer_pending` gauge comes from `Consumer.Pending`, which reports messages
+that have not been delivered yet; it is the earliest signal that the writer is
+falling behind.

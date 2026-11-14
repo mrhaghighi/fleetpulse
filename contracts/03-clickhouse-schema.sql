@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS fleetpulse.samples_1m
     min_v     SimpleAggregateFunction(min, Float32),
     max_v     SimpleAggregateFunction(max, Float32),
     sum_v     SimpleAggregateFunction(sum, Float64),
-    cnt       SimpleAggregateFunction(sum, UInt32)
+    cnt       SimpleAggregateFunction(sum, UInt64)
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(bucket)
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS fleetpulse.samples_1h
     min_v     SimpleAggregateFunction(min, Float32),
     max_v     SimpleAggregateFunction(max, Float32),
     sum_v     SimpleAggregateFunction(sum, Float64),
-    cnt       SimpleAggregateFunction(sum, UInt32)
+    cnt       SimpleAggregateFunction(sum, UInt64)
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toYear(bucket)
@@ -64,7 +64,7 @@ SELECT device_id, sensor,
        min(value)                  AS min_v,
        max(value)                  AS max_v,
        sum(toFloat64(value))       AS sum_v,
-       toUInt32(count())           AS cnt
+       count()                     AS cnt
 FROM fleetpulse.samples_raw
 GROUP BY device_id, sensor, bucket;
 
@@ -74,7 +74,7 @@ SELECT device_id, sensor,
        min(value)                  AS min_v,
        max(value)                  AS max_v,
        sum(toFloat64(value))       AS sum_v,
-       toUInt32(count())           AS cnt
+       count()                     AS cnt
 FROM fleetpulse.samples_raw
 GROUP BY device_id, sensor, bucket;
 
