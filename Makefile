@@ -3,7 +3,7 @@ GOIMPORTS ?= goimports
 GOLANGCI_LINT ?= golangci-lint
 VERSION ?= 0.1.0
 
-.PHONY: help build test test-integration lint fmt tidy up down logs reset smoke loadtest backfill-year dist clean
+.PHONY: help build test test-integration lint fmt tidy web up down logs reset smoke loadtest backfill-year dist clean
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -26,6 +26,9 @@ fmt: ## Format Go code with gofmt and goimports
 
 tidy: ## Tidy go.mod and go.sum
 	$(GO) mod tidy
+
+web: ## Build the single-file web UI from web/index.src.html
+	./scripts/build_web.sh
 
 up: ## Start the stack with docker compose
 	docker compose up -d --build

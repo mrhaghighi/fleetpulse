@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FleetPulse</title>
+<style>
+<!-- INLINE_UPLOT_CSS -->
+:root {
+  color-scheme: light;
+  --bg: #f5f7fa;
+  --panel: #ffffff;
+  --text: #1d2433;
+  --muted: #667085;
+  --line: #d8dee9;
+  --accent: #2563eb;
+  --danger: #b42318;
+}
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+header, .error, .controls, .chart-panel {
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+}
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 16px 0;
+}
+h1 { margin: 0; font-size: 21px; letter-spacing: -0.01em; }
+h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.status { margin: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.error {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid #fda29b;
+  border-radius: 6px;
+  background: #fef3f2;
+  color: var(--danger);
+  white-space: pre-wrap;
+}
+.controls {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.5fr) minmax(240px, 1fr) minmax(220px, 0.8fr);
+  gap: 12px;
+  padding: 12px 16px 0;
+}
+.panel {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+input[type="search"] {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+}
+input[type="search"]:focus, button:focus-visible, input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 2px 3px 2px 8px;
+  border-radius: 999px;
+  background: #e8efff;
+  color: #173a8a;
+  font-size: 13px;
+}
+.chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip button {
+  flex: none;
+  padding: 1px 5px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.chip button:hover { background: #d1e0ff; }
+.hint { min-height: 1.45em; margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.results-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.results {
+  max-height: 168px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.result {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.result:hover { background: #eef4ff; }
+.result:disabled { color: var(--muted); cursor: default; }
+.result:disabled:hover { background: none; }
+.result .meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.links { display: flex; gap: 10px; margin: 0 0 7px; }
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.sensors { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; }
+.check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.check input { margin: 0; }
+.ranges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 9px; }
+.range {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.range:hover { border-color: var(--accent); }
+.range[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: #fff; }
+.checks { display: flex; flex-direction: column; gap: 5px; }
+.chart-panel { padding: 12px 16px 24px; }
+.chart {
+  position: relative;
+  min-height: 420px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.chart-plot { width: 100%; }
+.empty {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+  font-size: 15px;
+  text-align: center;
+  pointer-events: none;
+}
+.tooltip {
+  position: absolute;
+  z-index: 10;
+  max-width: 360px;
+  max-height: 320px;
+  padding: 8px 10px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(17, 24, 39, 0.94);
+  color: #fff;
+  font-size: 12px;
+  box-shadow: 0 6px 20px rgba(16, 24, 40, 0.24);
+  pointer-events: none;
+}
+.tooltip .tip-time { margin-bottom: 4px; color: #d0d5dd; font-variant-numeric: tabular-nums; }
+.tooltip .row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.tooltip .swatch { flex: none; width: 8px; height: 8px; border-radius: 2px; }
+.tooltip .label {
+  flex: 1 1 auto;
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tooltip .value { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 900px) {
+  .controls { grid-template-columns: 1fr; }
+  .chart { overflow-x: auto; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>FleetPulse</h1>
+  <p id="status" class="status" role="status" aria-live="polite">loading…</p>
+</header>
+<div id="error" class="error" role="alert" hidden></div>
+<main class="controls">
+  <section class="panel" aria-labelledby="devices-heading">
+    <h2 id="devices-heading">Devices</h2>
+    <label for="device-search" class="hint">Search by device or hostname</label>
+    <input id="device-search" type="search" placeholder="sim-00001" autocomplete="off" spellcheck="false">
+    <div id="device-chips" class="chips" aria-live="polite"></div>
+    <p id="device-hint" class="hint"></p>
+    <div class="results-meta">
+      <span id="results-count">0 of 0</span>
+      <button id="load-more" class="link" type="button" hidden>Load more</button>
+    </div>
+    <ul id="device-results" class="results"></ul>
+  </section>
+
+  <section class="panel" aria-labelledby="sensors-heading">
+    <h2 id="sensors-heading">Sensors</h2>
+    <p class="links">
+      <button id="sensors-all" class="link" type="button">all</button>
+      <button id="sensors-none" class="link" type="button">none</button>
+    </p>
+    <div id="sensor-list" class="sensors"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="range-heading">
+    <h2 id="range-heading">Range</h2>
+    <div id="ranges" class="ranges"></div>
+    <div class="checks">
+      <label class="check"><input id="band" type="checkbox"> show min/max band</label>
+      <label class="check"><input id="auto" type="checkbox" checked> auto-refresh (10 s)</label>
+    </div>
+  </section>
+</main>
+
+<section class="chart-panel" aria-labelledby="chart-heading">
+  <h2 id="chart-heading">Sensors (%)</h2>
+  <div id="chart" class="chart">
+    <div id="chart-plot" class="chart-plot"></div>
+    <div id="chart-empty" class="empty">select devices and sensors</div>
+    <div id="tooltip" class="tooltip" hidden></div>
+  </div>
+</section>
+
+<script>
+<!-- INLINE_UPLOT_JS -->
+</script>
+<script>
+(function () {
+  'use strict';
+
+  const RANGES = ['5m', '15m', '1h', '6h', '24h', '7d', '30d', '90d', '1y'];
+  const AUTO_RANGES = new Set(['5m', '15m', '1h']);
+  const MAX_DEVICES = 8;
+  const MAX_SERIES = 24;
+  const DEVICE_PAGE = 50;
+  const SEARCH_DEBOUNCE_MS = 250;
+  const REFRESH_MS = 10000;
+  const CHART_HEIGHT = 360;
+  const COLORS = [
+    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b',
+    '#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#aec7e8', '#ffbb78',
+    '#98df8a', '#ff9896', '#c5b0d5', '#c49c94', '#f7b6d2', '#c7c7c7',
+    '#dbdb8d', '#9edae5', '#393b79', '#637939', '#8c6d31', '#843c39'
+  ];
+
+  const state = {
+    devices: [],
+    sensors: [],
+    range: '1h',
+    band: false,
+    auto: true,
+    catalog: [],
+    results: [],
+    total: 0,
+    query: '',
+    devicesLoading: true,
+    loading: false
+  };
+
+  const $ = id => document.getElementById(id);
+  const searchEl = $('device-search');
+  const chipsEl = $('device-chips');
+  const deviceHintEl = $('device-hint');
+  const resultsEl = $('device-results');
+  const resultsCountEl = $('results-count');
+  const loadMoreEl = $('load-more');
+  const sensorListEl = $('sensor-list');
+  const rangesEl = $('ranges');
+  const bandEl = $('band');
+  const autoEl = $('auto');
+  const statusEl = $('status');
+  const errorEl = $('error');
+  const plotEl = $('chart-plot');
+  const emptyEl = $('chart-empty');
+  const tooltipEl = $('tooltip');
+
+  const sensorLabels = new Map();
+  const alphaCache = new Map();
+  let chart = null;
+  let chartEntries = [];
+  let chartSignature = '';
+  let bandData = [];
+  let loadSeq = 0;
+  let seriesAbort = null;
+  let deviceAbort = null;
+  let searchTimer = null;
+
+  function element(tag, className, value) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (value != null) node.textContent = String(value);
+    return node;
+  }
+
+  function setStatus(parts) {
+    statusEl.textContent = parts.join(' · ');
+  }
+
+  function showError(err) {
+    errorEl.textContent = err && err.message ? err.message : String(err);
+    errorEl.hidden = false;
+  }
+
+  function hideError() {
+    errorEl.hidden = true;
+    errorEl.textContent = '';
+  }
+
+  function setEmpty(message) {
+    emptyEl.textContent = message;
+    emptyEl.hidden = false;
+  }
+
+  function hideEmpty() {
+    emptyEl.hidden = true;
+  }
+
+  function hideTooltip() {
+    tooltipEl.hidden = true;
+    tooltipEl.replaceChildren();
+  }
+
+  function sensorLabel(id) {
+    return sensorLabels.get(id) || id;
+  }
+
+  function alphaColor(hex, alpha) {
+    const key = hex + alpha;
+    if (!alphaCache.has(key)) {
+      const n = parseInt(hex.slice(1), 16);
+      alphaCache.set(key, 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')');
+    }
+    return alphaCache.get(key);
+  }
+
+  async function getJSON(url, signal) {
+    const response = await fetch(url, {
+      signal: signal,
+      cache: 'no-store',
+      headers: { Accept: 'application/json' }
+    });
+    let body = null;
+    try {
+      body = await response.json();
+    } catch (err) {
+      body = null;
+    }
+    if (!response.ok) {
+      const apiError = body && body.error ? body.error : null;
+      const message = apiError && apiError.message
+        ? (apiError.code ? apiError.code + ': ' + apiError.message : apiError.message)
+        : 'HTTP ' + response.status;
+      throw new Error(message);
+    }
+    if (body == null) throw new Error('invalid JSON response');
+    return body;
+  }
+
+  function renderChips() {
+    chipsEl.replaceChildren();
+    for (const id of state.devices) {
+      const chip = element('span', 'chip');
+      chip.appendChild(element('span', 'chip-label', id));
+      const remove = element('button', null, '×');
+      remove.type = 'button';
+      remove.title = 'Remove ' + id;
+      remove.setAttribute('aria-label', 'Remove ' + id);
+      remove.addEventListener('click', () => {
+        state.devices = state.devices.filter(device => device !== id);
+        updateHash();
+        renderChips();
+        renderResults();
+        refresh();
+      });
+      chip.appendChild(remove);
+      chipsEl.appendChild(chip);
+    }
+    deviceHintEl.textContent = state.devices.length >= MAX_DEVICES
+      ? 'maximum of ' + MAX_DEVICES + ' devices reached'
+      : state.devices.length + ' of ' + MAX_DEVICES + ' devices selected';
+  }
+
+  function renderResults() {
+    resultsEl.replaceChildren();
+    resultsCountEl.textContent = state.results.length + ' of ' + state.total;
+    loadMoreEl.hidden = state.results.length >= state.total || state.total === 0;
+    loadMoreEl.disabled = state.devicesLoading;
+
+    if (state.results.length === 0) {
+      resultsEl.appendChild(element('li', 'hint', state.devicesLoading ? 'loading…' : 'no matching devices'));
+      return;
+    }
+    for (const result of state.results) {
+      const item = element('li');
+      const button = element('button', 'result');
+      button.type = 'button';
+      button.disabled = state.devices.includes(result.device_id);
+      button.appendChild(element('span', null, result.device_id));
+      const meta = [];
+      if (result.hostname && result.hostname !== result.device_id) meta.push(result.hostname);
+      if (result.os) meta.push(result.os);
+      if (meta.length) button.appendChild(element('span', 'meta', meta.join(' · ')));
+      button.addEventListener('click', () => addDevice(result));
+      item.appendChild(button);
+      resultsEl.appendChild(item);
+    }
+  }
+
+  function addDevice(result) {
+    if (state.devices.includes(result.device_id)) return;
+    if (state.devices.length >= MAX_DEVICES) {
+      deviceHintEl.textContent = 'maximum of ' + MAX_DEVICES + ' devices reached';
+      return;
+    }
+    state.devices.push(result.device_id);
+    updateHash();
+    renderChips();
+    renderResults();
+    refresh();
+  }
+
+  async function loadDevices(reset) {
+    if (!reset && state.devicesLoading) return;
+    if (reset) {
+      state.results = [];
+      state.total = 0;
+    }
+    state.devicesLoading = true;
+    renderResults();
+    if (deviceAbort) deviceAbort.abort();
+    const controller = new AbortController();
+    deviceAbort = controller;
+    const offset = reset ? 0 : state.results.length;
+    const url = '/api/v1/devices?q=' + encodeURIComponent(state.query) +
+      '&limit=' + DEVICE_PAGE + '&offset=' + offset;
+    try {
+      const data = await getJSON(url, controller.signal);
+      if (controller !== deviceAbort) return;
+      const devices = Array.isArray(data.devices) ? data.devices : [];
+      state.results = reset ? devices : state.results.concat(devices);
+      state.total = Number.isFinite(data.total) ? data.total : state.results.length;
+      if (state.catalog.length > 0) hideError();
+    } catch (err) {
+      if (controller !== deviceAbort) return;
+      if (err && err.name === 'AbortError') return;
+      showError(err);
+    } finally {
+      if (controller === deviceAbort) {
+        state.devicesLoading = false;
+        renderResults();
+      }
+    }
+  }
+
+  function renderSensors() {
+    sensorListEl.replaceChildren();
+    if (state.catalog.length === 0) {
+      sensorListEl.appendChild(element('p', 'hint', 'sensor list unavailable'));
+      return;
+    }
+    for (const sensor of state.catalog) {
+      const label = element('label', 'check');
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.value = sensor.id;
+      input.checked = state.sensors.includes(sensor.id);
+      input.addEventListener('change', () => {
+        if (input.checked) {
+          if (!state.sensors.includes(sensor.id)) state.sensors.push(sensor.id);
+        } else {
+          state.sensors = state.sensors.filter(id => id !== sensor.id);
+        }
+        updateHash();
+        refresh();
+      });
+      label.appendChild(input);
+      label.appendChild(element('span', null, sensor.label + (sensor.unit ? ' (' + sensor.unit + ')' : '')));
+      sensorListEl.appendChild(label);
+    }
+  }
+
+  function renderRanges() {
+    rangesEl.replaceChildren();
+    for (const range of RANGES) {
+      const button = element('button', 'range', range);
+      button.type = 'button';
+      button.setAttribute('aria-pressed', String(state.range === range));
+      button.addEventListener('click', () => {
+        if (state.range === range) return;
+        state.range = range;
+        state.auto = AUTO_RANGES.has(range);
+        autoEl.checked = state.auto;
+        renderRanges();
+        updateHash();
+        refresh();
+      });
+      rangesEl.appendChild(button);
+    }
+  }
+
+  function readHash() {
+    const raw = location.hash.slice(1);
+    if (!raw) return null;
+    const params = new URLSearchParams(raw);
+    const result = { devices: null, sensors: null, range: null };
+    if (params.has('devices')) {
+      result.devices = params.get('devices').split(',').map(s => s.trim()).filter(Boolean);
+    }
+    if (params.has('sensors')) {
+      result.sensors = params.get('sensors').split(',').map(s => s.trim()).filter(Boolean);
+    }
+    const range = params.get('range');
+    if (range && RANGES.includes(range)) result.range = range;
+    return result;
+  }
+
+  function unique(values) {
+    return Array.from(new Set(values));
+  }
+
+  function applyHash() {
+    const parsed = readHash();
+    if (parsed) {
+      if (parsed.devices) state.devices = unique(parsed.devices).slice(0, MAX_DEVICES);
+      if (parsed.range) state.range = parsed.range;
+    }
+    const valid = id => state.catalog.some(sensor => sensor.id === id);
+    if (parsed && parsed.sensors) {
+      state.sensors = unique(parsed.sensors).filter(valid);
+    } else {
+      const cpu = state.catalog.some(sensor => sensor.id === 'cpu_usage');
+      state.sensors = cpu ? ['cpu_usage'] : state.catalog.slice(0, 1).map(sensor => sensor.id);
+    }
+  }
+
+  function updateHash() {
+    const hash = '#devices=' + state.devices.map(encodeURIComponent).join(',') +
+      '&sensors=' + state.sensors.map(encodeURIComponent).join(',') +
+      '&range=' + encodeURIComponent(state.range);
+    if (location.hash === hash) return;
+    try {
+      history.replaceState(null, '', hash);
+    } catch (err) {
+      location.hash = hash;
+    }
+  }
+
+  function sanitizePoints(raw) {
+    const points = [];
+    if (!Array.isArray(raw)) return points;
+    for (const point of raw) {
+      if (!Array.isArray(point) || point.length < 2) continue;
+      const ts = Number(point[0]);
+      const avg = Number(point[1]);
+      if (!Number.isFinite(ts) || !Number.isFinite(avg)) continue;
+      const min = point.length > 2 && Number.isFinite(Number(point[2])) ? Number(point[2]) : avg;
+      const max = point.length > 3 && Number.isFinite(Number(point[3])) ? Number(point[3]) : avg;
+      points.push([ts, avg, min, max]);
+    }
+    points.sort((a, b) => a[0] - b[0]);
+    return points;
+  }
+
+  function buildEntries(response) {
+    const series = Array.isArray(response.series) ? response.series : [];
+    const byKey = new Map();
+    for (const item of series) {
+      if (!item || typeof item !== 'object') continue;
+      const device = String(item.device_id == null ? '' : item.device_id);
+      const sensor = String(item.sensor == null ? '' : item.sensor);
+      byKey.set(device + '\u0000' + sensor, item);
+    }
+
+    const entries = [];
+    for (const device of state.devices) {
+      for (const sensor of state.sensors) {
+        const item = byKey.get(device + '\u0000' + sensor);
+        entries.push({
+          key: device + '\u0000' + sensor,
+          label: device + ' · ' + sensorLabel(sensor),
+          color: COLORS[entries.length % COLORS.length],
+          points: sanitizePoints(item ? item.points : [])
+        });
+      }
+    }
+    return entries;
+  }
+
+  function alignEntries(entries) {
+    const timestamps = new Set();
+    for (const entry of entries) {
+      for (const point of entry.points) timestamps.add(point[0]);
+    }
+    const xs = Array.from(timestamps).sort((a, b) => a - b);
+    const positions = new Map();
+    for (let i = 0; i < xs.length; i++) positions.set(xs[i], i);
+
+    for (const entry of entries) {
+      entry.avg = new Array(xs.length).fill(null);
+      entry.min = new Array(xs.length).fill(null);
+      entry.max = new Array(xs.length).fill(null);
+      for (const point of entry.points) {
+        const index = positions.get(point[0]);
+        entry.avg[index] = point[1];
+        entry.min[index] = point[2];
+        entry.max[index] = point[3];
+      }
+    }
+    return xs;
+  }
+
+  function drawBands(u) {
+    if (!state.band || bandData.length === 0) return;
+    const xs = u.data[0];
+    const ctx = u.ctx;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
+    ctx.clip();
+
+    for (let i = 0; i < bandData.length; i++) {
+      const series = u.series[i + 1];
+      if (!series || !series.show) continue;
+      const mins = bandData[i].min;
+      const maxs = bandData[i].max;
+      let j = 0;
+      while (j < xs.length) {
+        while (j < xs.length && (mins[j] == null || maxs[j] == null)) j++;
+        const start = j;
+        while (j < xs.length && mins[j] != null && maxs[j] != null) j++;
+        const end = j - 1;
+        if (end <= start) continue;
+        ctx.beginPath();
+        ctx.moveTo(u.valToPos(xs[start], 'x'), u.valToPos(maxs[start], 'y'));
+        for (let k = start + 1; k <= end; k++) {
+          ctx.lineTo(u.valToPos(xs[k], 'x'), u.valToPos(maxs[k], 'y'));
+        }
+        for (let k = end; k >= start; k--) {
+          ctx.lineTo(u.valToPos(xs[k], 'x'), u.valToPos(mins[k], 'y'));
+        }
+        ctx.closePath();
+        ctx.fillStyle = alphaColor(bandData[i].color, 0.16);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  function formatValue(value) {
+    return value == null ? '--' : value.toFixed(2) + ' %';
+  }
+
+  function onCursor(u) {
+    if (!chart || u.cursor.idx == null || u.cursor.left < 0 || u.cursor.top < 0) {
+      hideTooltip();
+      return;
+    }
+    const index = u.cursor.idx;
+    const ts = u.data[0][index];
+    if (ts == null) {
+      hideTooltip();
+      return;
+    }
+
+    tooltipEl.replaceChildren();
+    tooltipEl.appendChild(element('div', 'tip-time', new Date(ts * 1000).toLocaleString()));
+    let rows = 0;
+    for (let i = 0; i < chartEntries.length; i++) {
+      if (!u.series[i + 1] || !u.series[i + 1].show) continue;
+      const value = u.data[i + 1][index];
+      if (value == null) continue;
+      const row = element('div', 'row');
+      const swatch = element('span', 'swatch');
+      swatch.style.backgroundColor = chartEntries[i].color;
+      row.appendChild(swatch);
+      row.appendChild(element('span', 'label', chartEntries[i].label));
+      let text = formatValue(value);
+      if (state.band && bandData[i]) {
+        const min = bandData[i].min[index];
+        const max = bandData[i].max[index];
+        if (min != null && max != null) text += ' (' + min.toFixed(2) + '–' + max.toFixed(2) + ')';
+      }
+      row.appendChild(element('span', 'value', text));
+      tooltipEl.appendChild(row);
+      rows++;
+    }
+    if (rows === 0) {
+      hideTooltip();
+      return;
+    }
+
+    tooltipEl.hidden = false;
+    const hostRect = $('chart').getBoundingClientRect();
+    const overRect = u.over.getBoundingClientRect();
+    const x = overRect.left - hostRect.left + u.cursor.left;
+    const y = overRect.top - hostRect.top + u.cursor.top;
+    let left = x + 14;
+    let top = y + 14;
+    if (left + tooltipEl.offsetWidth > $('chart').clientWidth - 4) left = x - tooltipEl.offsetWidth - 14;
+    if (top + tooltipEl.offsetHeight > $('chart').clientHeight - 4) top = y - tooltipEl.offsetHeight - 14;
+    tooltipEl.style.left = Math.max(4, left) + 'px';
+    tooltipEl.style.top = Math.max(4, top) + 'px';
+  }
+
+  function chartOptions(entries) {
+    const series = [{ label: 'time' }];
+    for (const entry of entries) {
+      series.push({
+        label: entry.label,
+        stroke: entry.color,
+        width: 1.5,
+        points: { show: false },
+        spanGaps: false,
+        value: (u, value) => formatValue(value)
+      });
+    }
+    return {
+      width: Math.max(320, plotEl.clientWidth || 800),
+      height: CHART_HEIGHT,
+      scales: {
+        x: { time: true },
+        y: { range: [0, 100] }
+      },
+      axes: [
+        { stroke: '#475467', grid: { stroke: '#eaecf0' }, ticks: { stroke: '#d0d5dd' } },
+        {
+          scale: 'y',
+          label: '%',
+          size: 52,
+          stroke: '#475467',
+          grid: { stroke: '#eaecf0' },
+          ticks: { stroke: '#d0d5dd' },
+          values: (u, splits) => splits.map(value => value.toFixed(0))
+        }
+      ],
+      series: series,
+      legend: { live: true },
+      cursor: { points: { show: true, size: 5 } },
+      hooks: { draw: [drawBands], setCursor: [onCursor] }
+    };
+  }
+
+  function resizeChart() {
+    if (!chart) return;
+    const width = plotEl.clientWidth;
+    if (width > 0 && Math.abs(chart.width - width) > 1) {
+      chart.setSize({ width: width, height: CHART_HEIGHT });
+    }
+  }
+
+  function renderChart(entries, xs) {
+    const signature = entries.map(entry => entry.key).join('|');
+    chartEntries = entries;
+    bandData = entries.map(entry => ({ min: entry.min, max: entry.max, color: entry.color }));
+    hideTooltip();
+    const data = [xs].concat(entries.map(entry => entry.avg));
+
+    if (!chart || signature !== chartSignature) {
+      if (chart) chart.destroy();
+      chartSignature = signature;
+      chart = new uPlot(chartOptions(entries), data, plotEl);
+    } else {
+      chart.setData(data, true);
+      resizeChart();
+    }
+  }
+
+  function resetChart(message) {
+    if (chart) {
+      chart.destroy();
+      chart = null;
+    }
+    chartSignature = '';
+    chartEntries = [];
+    bandData = [];
+    plotEl.replaceChildren();
+    hideTooltip();
+    setEmpty(message);
+  }
+
+  function refresh() {
+    if (state.devices.length === 0) {
+      resetChart('select up to ' + MAX_DEVICES + ' devices');
+      setStatus(['no devices selected']);
+      return;
+    }
+    if (state.sensors.length === 0) {
+      resetChart('select at least one sensor');
+      setStatus(['no sensors selected']);
+      return;
+    }
+    if (state.devices.length * state.sensors.length > MAX_SERIES) {
+      resetChart('too many series');
+      showError(new Error('devices × sensors must be at most ' + MAX_SERIES));
+      setStatus(['too many series']);
+      return;
+    }
+
+    if (seriesAbort) seriesAbort.abort();
+    const controller = new AbortController();
+    seriesAbort = controller;
+    const seq = ++loadSeq;
+    state.loading = true;
+    setStatus(['loading…']);
+
+    const params = new URLSearchParams({
+      devices: state.devices.join(','),
+      sensors: state.sensors.join(','),
+      range: state.range
+    });
+    const started = performance.now();
+
+    getJSON('/api/v1/series?' + params.toString(), controller.signal)
+      .then(data => {
+        if (seq !== loadSeq) return;
+        const elapsed = performance.now() - started;
+        hideError();
+        const source = String(data.source == null ? '' : data.source);
+        const step = Number(data.step_seconds);
+        const entries = buildEntries(data);
+        const xs = alignEntries(entries);
+        let points = 0;
+        for (const entry of entries) points += entry.points.length;
+        renderChart(entries, xs);
+        if (points === 0) {
+          setEmpty('no data');
+          setStatus(['no data', 'source ' + source, 'step ' + step + ' s', '0 points', Math.round(elapsed) + ' ms']);
+        } else {
+          hideEmpty();
+          setStatus(['source ' + source, 'step ' + step + ' s', points + ' points', Math.round(elapsed) + ' ms']);
+        }
+      })
+      .catch(err => {
+        if (seq !== loadSeq) return;
+        if (err && err.name === 'AbortError') return;
+        const elapsed = performance.now() - started;
+        showError(err);
+        setStatus(['request failed', Math.round(elapsed) + ' ms']);
+      })
+      .finally(() => {
+        if (seq === loadSeq) state.loading = false;
+      });
+  }
+
+  function bind() {
+    searchEl.addEventListener('input', () => {
+      state.query = searchEl.value.trim();
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => loadDevices(true), SEARCH_DEBOUNCE_MS);
+    });
+
+    loadMoreEl.addEventListener('click', () => {
+      if (!state.devicesLoading) loadDevices(false);
+    });
+
+    $('sensors-all').addEventListener('click', () => {
+      state.sensors = state.catalog.map(sensor => sensor.id);
+      renderSensors();
+      updateHash();
+      refresh();
+    });
+
+    $('sensors-none').addEventListener('click', () => {
+      state.sensors = [];
+      renderSensors();
+      updateHash();
+      refresh();
+    });
+
+    bandEl.addEventListener('change', () => {
+      state.band = bandEl.checked;
+      if (chart) chart.redraw();
+      if (tooltipEl.hidden === false && chart) onCursor(chart);
+    });
+
+    autoEl.addEventListener('change', () => {
+      state.auto = autoEl.checked;
+    });
+
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(resizeChart).observe(plotEl);
+    } else {
+      window.addEventListener('resize', resizeChart);
+    }
+
+    setInterval(() => {
+      if (state.auto && !state.loading && document.visibilityState === 'visible' &&
+          state.devices.length > 0 && state.sensors.length > 0) {
+        refresh();
+      }
+    }, REFRESH_MS);
+  }
+
+  async function init() {
+    bind();
+    renderRanges();
+    renderChips();
+    renderResults();
+
+    try {
+      const data = await getJSON('/api/v1/sensors');
+      state.catalog = Array.isArray(data.sensors) ? data.sensors : [];
+      for (const sensor of state.catalog) sensorLabels.set(sensor.id, sensor.label);
+    } catch (err) {
+      showError(err);
+    }
+
+    applyHash();
+    renderSensors();
+    renderRanges();
+    renderChips();
+    state.auto = AUTO_RANGES.has(state.range);
+    autoEl.checked = state.auto;
+    bandEl.checked = state.band;
+    updateHash();
+
+    await loadDevices(true);
+    refresh();
+  }
+
+  init().catch(err => {
+    showError(err);
+    setStatus(['failed to start']);
+  });
+})();
+</script>
+</body>
+</html>
