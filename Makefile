@@ -45,9 +45,8 @@ reset: ## Stop the stack and delete its volumes
 smoke: ## Run the end-to-end smoke test (ARGS="--with-year --chaos")
 	GO="$(GO)" ./scripts/smoke.sh $(ARGS)
 
-loadtest: ## Run the load test
-	@echo "not implemented yet (T17)"
-	@exit 1
+loadtest: ## Run the load test (ARGS="--stages 100,200 --hold 1m"; needs a running stack)
+	GO="$(GO)" ./scripts/loadtest.sh $(ARGS)
 
 backfill-year: ## Backfill one year of history (forces a rebuild)
 	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \

@@ -10,10 +10,16 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v3 v3.0.5
+	gonum.org/v1/plot v0.17.0
 )
 
 require (
+	codeberg.org/go-fonts/liberation v0.5.0 // indirect
+	codeberg.org/go-latex/latex v0.2.0 // indirect
+	codeberg.org/go-pdf/fpdf v0.11.1 // indirect
+	git.sr.ht/~sbinet/gg v0.7.0 // indirect
 	github.com/ClickHouse/ch-go v0.75.0 // indirect
+	github.com/ajstarks/svgo v0.0.0-20211024235047-1546f124cd8b // indirect
 	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/antithesishq/antithesis-sdk-go v0.9.0-default-no-op // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -21,6 +27,7 @@ require (
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.8.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.20.4 // indirect
@@ -40,6 +47,8 @@ require (
 	go.opentelemetry.io/otel v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/image v0.30.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 )
