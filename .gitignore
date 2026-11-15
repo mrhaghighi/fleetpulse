@@ -9,6 +9,9 @@
 coverage.*
 *.cover
 
+# Load test output
+/results/
+
 # Environment
 .env
 .env.local
