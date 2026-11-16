@@ -1,6 +1,6 @@
 # API
 
-FleetPulse has three HTTP surfaces: the exporter API that every real and simulated device serves (contract 01), the query API and web UI (contract 04), and the telemetry endpoints every server exposes (contract 05). This page documents the sensor vocabulary, the exporter API, and the query API.
+FleetPulse has four HTTP surfaces: the exporter API that every real and simulated device serves (contract 01), the query API and web UI (contract 04), the simulator fleet API, and the telemetry endpoints every server exposes (contract 05). This page documents all of them, starting with the sensor vocabulary.
 
 ## Sensors
 
@@ -20,7 +20,7 @@ The integer `id` is the stable value used by the ClickHouse `Enum8` column; the 
 
 ## Exporter API
 
-Every exporter — real or simulated — serves the same three endpoints on its own base URL (default `http://localhost:9100`). The simulator reuses the same handler, so a scraper cannot tell the two apart.
+Every exporter — real or simulated — serves the same exporter endpoints on its own base URL (default `http://localhost:9100`). The simulator reuses the same handler, so a scraper cannot tell the two apart.
 
 ### `GET /healthz`
 
@@ -116,6 +116,10 @@ Every endpoint uses the same envelope:
 | `not_found` | 404 | the route does not exist |
 | `timeout` | 504 | the ClickHouse call exceeded `QUERY_TIMEOUT` (default 10s) |
 | `internal` | 500 | a ClickHouse or driver failure; the message is always the generic `internal error`, the real error is logged |
+
+A method the route does not accept never reaches the handler. The mux answers
+`405 Method Not Allowed` with a plain-text `Method Not Allowed` body and an
+`Allow` header, not the JSON envelope.
 
 ```sh
 curl -s -i 'localhost:8080/api/v1/series?devices=sim-00001&sensors=foo&range=5m'
@@ -228,3 +232,104 @@ Serve the embedded single-page UI with `Cache-Control: no-cache`, so a redeploy 
 ```sh
 curl -s -i localhost:8080/ | head -5
 ```
+
+```text
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Content-Type: text/html; charset=utf-8
+```
+
+Every other path returns `404` in the usual error envelope:
+
+```sh
+curl -s localhost:8080/nope
+```
+
+```json
+{"error":{"code":"not_found","message":"not found"}}
+```
+
+## Simulator API
+
+The simulator (default `http://localhost:9200`) serves the exporter API for a
+whole virtual fleet. Each device is reachable under `/d/<device_id>`, and
+`/targets` is the discovery document the scraper reads.
+
+| endpoint | purpose |
+|----------|---------|
+| `GET /healthz` | liveness, returns `ok` |
+| `GET /statusz` | telemetry: counter `samples_requests`, gauge `devices` |
+| `GET /targets` | every device and the base URL the scraper should use |
+| `GET /admin/fleet` | current fleet size, `{"devices":N}` |
+| `POST /admin/fleet` | resize the fleet live, body `{"devices":N}` |
+| `GET /d/{device_id}/healthz` | exporter `/healthz` for one device |
+| `GET /d/{device_id}/v1/info` | exporter `/v1/info` for one device |
+| `GET /d/{device_id}/v1/samples` | exporter `/v1/samples` for one device |
+
+```sh
+curl -s localhost:9200/targets | head -c 200
+```
+
+```json
+[{"device_id":"sim-00001","url":"http://simulator:9200/d/sim-00001"},
+ {"device_id":"sim-00002","url":"http://simulator:9200/d/sim-00002"}]
+```
+
+The URL is `<SIM_PUBLIC_URL>/d/<device_id>`. It must be reachable by the
+scraper, so set `SIM_PUBLIC_URL` when the simulator runs on another machine.
+
+```sh
+curl -s localhost:9200/admin/fleet
+curl -s -X POST -d '{"devices":200}' localhost:9200/admin/fleet
+curl -s 'localhost:9200/d/sim-00001/v1/samples?limit=1'
+```
+
+`POST /admin/fleet` accepts `0..100000`. Invalid sizes, malformed JSON and a
+missing `devices` field return `400 invalid_argument`:
+
+```json
+{"error":{"code":"invalid_argument","message":"devices -1 must be between 0 and 100000"}}
+```
+
+Values are deterministic: the same `SIM_SEED`, device and timestamp return the
+same number on any machine. A resize does not change the readings of devices
+that remain. See [Simulator](simulator.md) for the signal model.
+
+## Telemetry
+
+Every server binary exposes the same two endpoints on its own `HTTP_ADDR`:
+
+| endpoint | response |
+|----------|----------|
+| `GET /healthz` | `200` and `ok`. Liveness only; it does not check dependencies. |
+| `GET /statusz` | JSON object with `service`, `version`, `uptime_seconds`, `counters`, `gauges` and `timings`. |
+
+`timings` holds `count`, `p50`, `p95` and `p99` over the last 1024 observations.
+Counters only increase. Names are `snake_case` and are part of contract 05; the
+load test reads them.
+
+| service | port | counters | gauges | timings |
+|---------|------|----------|--------|---------|
+| exporter | 9100 | `ticks`, `sensor_errors` | `buffer_len` | — |
+| simulator | 9200 | `samples_requests` | `devices` | — |
+| scraper | 9300 | `scrapes_ok`, `scrapes_failed`, `samples_published`, `publish_failed`, `truncated_scrapes` | `targets` | `scrape_ms`, `publish_ms` |
+| writer | 9400 | `msgs_received`, `rows_inserted`, `batches_ok`, `batches_failed`, `dlq_messages` | `consumer_pending` | `insert_ms`, `batch_rows`, `e2e_lag_ms` |
+| query | 8080 | `requests_total`, `requests_failed` | — | `series_ms`, `devices_ms` |
+
+```sh
+curl -s localhost:9400/statusz
+```
+
+```json
+{"service":"writer","version":"0.1.0","uptime_seconds":734,
+ "counters":{"batches_failed":0,"batches_ok":247,"dlq_messages":0,"msgs_received":12718,"rows_inserted":1284484},
+ "gauges":{"consumer_pending":0},
+ "timings":{"batch_rows":{"count":247,"p50":3950,"p95":8359,"p99":50310},
+            "e2e_lag_ms":{"count":247,"p50":941,"p95":1583,"p99":1739},
+            "insert_ms":{"count":247,"p50":35.62,"p95":88.89,"p99":201.07}}}
+```
+
+`e2e_lag_ms` is `now - newest sample ts` for the last successful batch, so it
+includes both stream backlog and insert time. `consumer_pending` is the number
+of messages not yet delivered to the writer. Both signals are covered in
+[Operations](operations.md#writer).

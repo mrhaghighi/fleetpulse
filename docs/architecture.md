@@ -1,9 +1,83 @@
 # Architecture
 
-FleetPulse is a small monitoring stack with one job: turn host sensor readings
-into queryable history. This page describes how the pieces fit together.
-Sections are added as their components land; the "Scraper" and "Message bus"
-sections below cover the collection path from exporter to writer.
+FleetPulse turns host sensor readings into queryable history. This page
+describes the components, the data flow, and what happens when a component is
+down. The sections after that describe each hop in detail.
+
+## Components
+
+| component | binary | responsibility | local state | default port |
+|-----------|--------|----------------|-------------|--------------|
+| exporter | `cmd/exporter` | Sample seven host sensors once per second and serve them over HTTP. | In-memory 300-second ring buffer. | `9100` |
+| simulator | `cmd/simulator` | Serve a configurable fleet of virtual exporters with the same API as the real exporter. | Fleet size and generator seed; values are computed, not stored. | `9200` |
+| scraper | `cmd/scraper` | Discover targets, pull each one every `interval`, publish one message per successful scrape. | Cursor per target, snapshotted to `SCRAPER_CURSOR_FILE`. | `9300` |
+| NATS JetStream | `nats` container | Durable message bus and 48-hour replay buffer. | Streams on a file-backed volume. | `4222`, monitoring `8222` |
+| writer | `cmd/writer` | Pull messages, un-pivot them into narrow rows, batch-insert into ClickHouse, then acknowledge. | None; its position is the durable consumer ack floor. | `9400` |
+| ClickHouse | `clickhouse` container | Store raw samples and two rollup tiers. | Data volume `fleetpulse_ch-data`. | `9000` native, `8123` HTTP |
+| query | `cmd/query` | Validate requests, plan the storage tier, read ClickHouse, serve the API and the embedded UI. | None. | `8080` |
+
+Tools that are not part of the running stack:
+
+| tool | binary | purpose |
+|------|--------|---------|
+| backfill | `cmd/backfill` | Write historical raw and rollup rows from the same deterministic generator as the simulator. |
+| smoketest | `cmd/smoketest` | Drive the stack through its public API and prove the data path end to end. |
+| loadtest | `cmd/loadtest` | Grow the simulated fleet, sample the stack, and write graphs and a report. |
+
+## Data flow
+
+```mermaid
+flowchart LR
+    subgraph devices["Devices"]
+        E["exporter<br/>7 sensors, 1 s buffer 300 s"]
+        S["simulator<br/>virtual exporters"]
+    end
+
+    E -->|"1. GET /v1/samples?since=N"| SC["scraper<br/>cursor per target"]
+    S -->|"1. GET /v1/samples?since=N"| SC
+    SC -->|"2. publish metrics.samples"| N["NATS JetStream<br/>METRICS 48 h, METRICS_DLQ 7 d"]
+    N -->|"3. pull batch"| W["writer<br/>batch 50000 rows or 2 s"]
+    W -->|"4. INSERT"| CH[("ClickHouse<br/>samples_raw / samples_1m / samples_1h")]
+    CH -->|"5. SELECT per tier"| Q["query + UI<br/>:8080"]
+    B["backfill"] -->|"direct INSERT"| CH
+```
+
+1. Each exporter samples the host every second and keeps 300 seconds in memory.
+   The scraper asks for everything newer than its cursor for that target.
+2. The scraper validates the samples, publishes one JSON message per device
+   scrape, and only then advances the cursor.
+3. The writer pulls up to `WRITER_FETCH_MSGS` messages from the durable `writer`
+   consumer.
+4. The writer un-pivots the samples into `(device_id, sensor, ts, value)` rows,
+   inserts them into `samples_raw`, upserts `devices`, and then acknowledges the
+   messages.
+5. The query service picks `samples_raw`, `samples_1m` or `samples_1h` from the
+   requested window and returns `[ts, avg, min, max]` points. Materialized views
+   fill the rollup tiers from `samples_raw`; the backfill writes them directly
+   for older history.
+
+## Failure behaviour
+
+The table describes a single component being unavailable. "No loss" below means
+the buffered path absorbs the outage.
+
+| component down | effect on ingestion | effect on queries | data loss | recovery |
+|----------------|--------------------|-------------------|-----------|----------|
+| **exporter** | The scraper logs a failed scrape for that target and retries with exponential backoff (first retry after `interval`, capped at 60 s). Other targets are unaffected. | Charts for that host stop advancing. | None while the outage is shorter than the exporter's 300-second buffer. Longer outages raise `truncated_scrapes`; the missing seconds are gone. | Automatic. The scraper re-reads from its cursor when the exporter returns. |
+| **scraper** | No new messages reach NATS. Exporters keep buffering. | Stored data is served normally; the newest points stop advancing. | A gap of up to 300 seconds per target; the cursor resumes at the last published second. Outages longer than 300 s lose the oldest buffered samples. | Automatic on restart; cursors are restored from `SCRAPER_CURSOR_FILE`. A missing cursor file causes one round of duplicate rows. |
+| **NATS** | Scraper publishes fail and increment `publish_failed`; the cursor does not advance, so the next scrape republishes. Writer fetches fail and it keeps retrying. | Unaffected; queries only read ClickHouse. | None while exporters still hold the samples (300 s). Beyond that the oldest samples are lost. | Automatic when NATS returns. File-backed streams survive a NATS restart. |
+| **writer** | Messages accumulate in the `METRICS` stream; `consumer_pending` grows. The scraper keeps publishing. | Unaffected; charts show stale data at the right edge. | None for outages shorter than the 48-hour stream age. After 48 h, JetStream deletes the oldest messages. | Automatic. The durable consumer resumes from its last ack. At most one in-flight batch is reinserted, producing accepted duplicate rows. |
+| **ClickHouse** | Inserts fail and increment `batches_failed`; the writer retries the same batch with backoff from 500 ms to 30 s and never acks early. Messages stay in NATS. | `/readyz` returns `503`; API reads return `500`; the UI shows the error banner. | None for outages shorter than 48 hours. | Automatic. The first successful insert drains the pending batch. No restart is needed. |
+| **query** | None; ingestion never talks to the query service. | The UI and API are unavailable. | None. | Restart the service; it keeps no state. |
+| **simulator** | The scraper marks its targets failed and retries. Real exporters are unaffected. | Charts for `sim-*` devices stop advancing. The stale device list remains in ClickHouse. | A gap of up to 300 seconds per simulated device. | Automatic when the simulator returns. |
+
+Two more cases deserve a mention:
+
+- **Disk full on the ClickHouse volume.** Inserts fail, so the writer stops
+  acking and NATS fills. See [Troubleshooting](troubleshooting.md#clickhouse-runs-out-of-disk).
+- **NATS volume lost.** The `METRICS` stream is recreated empty at the next
+  `EnsureStreams`. Unconsumed messages and the 48-hour replay buffer are gone.
+  ClickHouse keeps the rows it already has.
 
 ## Message bus
 
