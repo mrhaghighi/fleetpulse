@@ -163,6 +163,5 @@ production one.
 
 ## Design record
 
-This page is also the design record for the tier strategy requested as
-ADR-0012. No separate `docs/adr/0012-*.md` file was added because T14's file
-list contains only `docs/backfill.md`.
+The tier strategy is recorded in
+[ADR-0012](adr/0012-backfill-writes-tiers-directly.md).

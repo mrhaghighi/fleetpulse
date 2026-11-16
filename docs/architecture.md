@@ -105,7 +105,8 @@ exist. Why each setting:
   removed by age, not by being consumed. That keeps the 48h replay buffer
   intact even while the writer is caught up.
 - **48h max age on `METRICS`.** The stream is not only a queue; it is the replay
-  buffer for the storage-migration plan (ADR-0004). Two days is long enough to
+  buffer for the storage-migration plan
+  ([ADR-0004](adr/0004-nats-jetstream-as-queue.md)). Two days is long enough to
   survive a weekend writer outage and to replay raw data after a schema change,
   without turning NATS into a second database.
 - **7d max age on `METRICS_DLQ`.** Dead letters are rare but must outlive a
@@ -145,7 +146,8 @@ The publish header `Nats-Msg-Id` is `<device_id>:<last sample ts>`. JetStream
 drops a second publish with the same ID inside the 2m window. That protects the
 normal retry path; it does not make delivery exactly-once. A crash between the
 ClickHouse insert and the ack redelivers the batch and inserts identical rows.
-This is accepted by contract 02 and ADR-0007: `avg`, `min` and `max` are
+This is accepted by contract 02 and
+[ADR-0007](adr/0007-at-least-once-delivery.md): `avg`, `min` and `max` are
 unchanged by identical duplicates, and only `cnt` can be slightly inflated.
 
 ### Dead letters
@@ -244,7 +246,8 @@ real file, so a crash never leaves a half-written cursor file.
 
 On startup a missing or corrupt file is not fatal: the scraper logs at `Warn`
 and starts empty. The first scrape then asks for the whole exporter buffer,
-which produces duplicates that ADR-0007 accepts.
+which produces duplicates that
+[ADR-0007](adr/0007-at-least-once-delivery.md) accepts.
 
 On SIGTERM the scraper stops discovery and target tickers, gives in-flight
 scrapes up to 10 seconds to finish, then writes the final snapshot. A scrape
@@ -300,8 +303,8 @@ them and redelivers them if the writer dies.
 
 A crash between a successful insert and the acks redelivers the batch and
 inserts identical rows. That is the at-least-once contract from contract 02 and
-ADR-0007: `min`, `max` and `sum` are unchanged by identical duplicates; only
-`cnt` can be slightly inflated.
+[ADR-0007](adr/0007-at-least-once-delivery.md): `min`, `max` and `sum` are
+unchanged by identical duplicates; only `cnt` can be slightly inflated.
 
 ### Poison messages
 
@@ -429,3 +432,25 @@ recovered, logged with its stack, and also becomes `500 internal error`.
 `requests_failed` counts every response with status `>= 400`, including client
 mistakes, so pair it with `requests_total` rather than treating it as a pure
 availability signal.
+
+## Architecture decision records
+
+Each significant choice has a short record in [`docs/adr`](adr/), written from
+[the template](adr/0000-template.md). Accepted records are not edited; a later
+decision supersedes them with a new number.
+
+| ADR | decision | status |
+|-----|----------|--------|
+| [0001](adr/0001-record-architecture-decisions.md) | Record architecture decisions as ADRs in the repository | Accepted |
+| [0002](adr/0002-clickhouse-as-time-series-store.md) | ClickHouse (MergeTree family) as the time-series store | Accepted |
+| [0003](adr/0003-pull-model-with-exporter-buffer.md) | Pull model: exporter samples into a 300 s buffer, scraper pulls with a cursor | Accepted |
+| [0004](adr/0004-nats-jetstream-as-queue.md) | NATS JetStream as the durable queue and replay buffer | Accepted |
+| [0005](adr/0005-tiered-rollups-at-write-time.md) | Tiered rollups computed at write time; planner picks the coarsest tier | Accepted |
+| [0006](adr/0006-narrow-rows.md) | Narrow rows: one row per sensor sample | Accepted |
+| [0007](adr/0007-at-least-once-delivery.md) | At-least-once delivery; duplicates tolerated | Accepted |
+| [0008](adr/0008-deterministic-stateless-simulator.md) | Deterministic stateless simulator | Accepted |
+| [0009](adr/0009-go-layout-and-stdlib-first.md) | Thin `cmd/*`, logic in `internal/*`, stdlib-first | Accepted |
+| [0010](adr/0010-single-file-ui.md) | Single-file UI with inlined uPlot, embedded in the query binary | Accepted |
+| [0011](adr/0011-platform-support-policy.md) | Linux fully supported; macOS and Windows best-effort | Accepted |
+| [0012](adr/0012-backfill-writes-tiers-directly.md) | Backfill writes each tier directly from the signal function | Accepted |
+| [0013](adr/0013-query-api-is-the-only-reader.md) | Query API is the only reader; storage hidden behind `store` | Accepted |

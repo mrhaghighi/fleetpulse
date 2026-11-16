@@ -94,7 +94,7 @@ Data moves in one direction: exporters hold a 300-second buffer, the scraper kee
 | [Exporter on Linux](docs/exporter/linux.md) | systemd install |
 | [Exporter on macOS](docs/exporter/macos.md) | launchd install |
 | [Exporter on Windows](docs/exporter/windows.md) | NSSM service install |
-| [ADRs](docs/adr/0000-template.md) | decision record template |
+| [Architecture decision records](docs/architecture.md#architecture-decision-records) | why the stack is built this way |
 
 ## Repository layout
 
