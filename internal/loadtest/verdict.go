@@ -49,12 +49,16 @@ type StageSummary struct {
 
 // verdictInput is the evidence for one stage verdict.
 type verdictInput struct {
-	E2ELagP95MS      float64
-	ConsumerPending  []Point
-	ScrapesOK        int64
-	ScrapesFailed    int64
-	Query1yP95MS     float64
-	TruncatedScrapes int64
+	E2ELagP95MS         float64
+	ConsumerPending     []Point
+	RowsPerSecond       float64
+	TargetRowsPerSecond float64
+	ScrapesOK           int64
+	ScrapesFailed       int64
+	QueryFailures       int64
+	QueryTotal          int64
+	Query1yP95MS        float64
+	TruncatedScrapes    int64
 }
 
 // verdict is the outcome of the T17 health rules.
@@ -66,6 +70,23 @@ type verdict struct {
 // evaluateVerdict applies the T17 rules in their documented order and returns
 // the first condition that failed.
 func evaluateVerdict(in verdictInput) verdict {
+	if in.TargetRowsPerSecond > 0 {
+		minimum := 0.9 * in.TargetRowsPerSecond
+		if in.RowsPerSecond < minimum {
+			return verdict{FailedCondition: fmt.Sprintf(
+				"rows/s %.1f < 90%% of target %.1f", in.RowsPerSecond, in.TargetRowsPerSecond,
+			)}
+		}
+	}
+	if in.QueryTotal == 0 {
+		return verdict{FailedCondition: "no query samples"}
+	}
+	if rate := float64(in.QueryFailures) / float64(in.QueryTotal); rate >= 0.01 {
+		return verdict{FailedCondition: fmt.Sprintf(
+			"query failure rate %.2f%% >= 1.00%%", rate*100,
+		)}
+	}
+
 	if in.E2ELagP95MS >= maxE2ELagP95MS {
 		return verdict{FailedCondition: fmt.Sprintf(
 			"e2e_lag_ms p95 %.1f ms >= %.0f ms", in.E2ELagP95MS, maxE2ELagP95MS,
@@ -245,12 +266,16 @@ func summarize(devices int, observations []observation, queries querySnapshot) S
 	}
 
 	result := evaluateVerdict(verdictInput{
-		E2ELagP95MS:      summary.E2ELagP95MS,
-		ConsumerPending:  pending,
-		ScrapesOK:        scrapesOK,
-		ScrapesFailed:    scrapesFailed,
-		Query1yP95MS:     summary.QueryP95MS["1y"],
-		TruncatedScrapes: summary.TruncatedScrapes,
+		E2ELagP95MS:         summary.E2ELagP95MS,
+		ConsumerPending:     pending,
+		RowsPerSecond:       summary.RowsPerSecond,
+		TargetRowsPerSecond: summary.TargetRowsPerSecond,
+		ScrapesOK:           scrapesOK,
+		ScrapesFailed:       scrapesFailed,
+		QueryFailures:       summary.QueryFailures,
+		QueryTotal:          summary.QueryTotal,
+		Query1yP95MS:        summary.QueryP95MS["1y"],
+		TruncatedScrapes:    summary.TruncatedScrapes,
 	})
 	summary.Healthy = result.Healthy
 	summary.FailedCondition = result.FailedCondition

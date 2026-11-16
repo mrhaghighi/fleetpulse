@@ -118,4 +118,25 @@ bash scripts/verify_schema.sh
 
 ## Size estimates
 
-TBD (T20)
+Measured compressed bytes per row (`system.parts`, 2026-11-16, 20-device local
+stack): raw **2.216 B**, 1m **9.228 B**, 1h **11.413 B**. The full derivation,
+including the 10,000-device projection and the one-year cost assumption, is in
+[Design §5](design.md#5-data-volume-and-one-year-cost). The resulting estimate
+at 10,000 devices is:
+
+| tier | rows at 10k devices | bytes/row | size |
+|---|---:|---:|---:|
+| raw, 7 days | 42.3 billion | 2.216 | 93.8 GB |
+| 1m, 90 days | 9.07 billion | 9.228 | 83.7 GB |
+| 1h, 400 days | 672 million | 11.413 | 7.7 GB |
+| **total, one copy** | | | **185.2 GB** |
+
+Reproduce the input with:
+
+```sql
+SELECT table, sum(rows) AS rows, sum(bytes_on_disk) AS bytes,
+       round(sum(bytes_on_disk) / sum(rows), 3) AS bytes_per_row
+FROM system.parts
+WHERE active AND database = 'fleetpulse'
+GROUP BY table ORDER BY table;
+```

@@ -80,6 +80,9 @@ func TestPlanQueryMaxPointsBoundaries(t *testing.T) {
 		{name: "90d at 2000 points", window: 90 * 86400, maxPoints: 2000, step: 21600, tier: "1h"},
 		{name: "1y at 100 points", window: 365 * 86400, maxPoints: 100, step: 21600, tier: "1h"},
 		{name: "1y at 2000 points", window: 365 * 86400, maxPoints: 2000, step: 21600, tier: "1h"},
+		// 1004 / 5 = 200.8, so 5 s would return 201 buckets. The contract
+		// requires the smallest step whose bucket count is <= max_points.
+		{name: "non-divisible window at 200 points", window: 1004, maxPoints: 200, step: 10, tier: "raw"},
 	}
 
 	for _, tt := range tests {

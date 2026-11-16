@@ -93,10 +93,12 @@ func PlanQuery(now, from, to int64, maxPoints int) (Plan, error) {
 }
 
 // smallestStep returns the smallest allowed step that keeps the bucket count
-// at or below maxPoints, or the largest allowed step when none does.
+// at or below maxPoints, or the largest allowed step when none does. It uses
+// ceiling division: a 1004-second window at 5-second steps has 201 buckets, not
+// 200, so maxPoints must be enforced on the real bucket count.
 func smallestStep(window, maxPoints int64) int64 {
 	for _, step := range allowedSteps {
-		if window/step <= maxPoints {
+		if (window+step-1)/step <= maxPoints {
 			return step
 		}
 	}

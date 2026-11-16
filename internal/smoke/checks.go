@@ -36,13 +36,16 @@ const (
 	minRawPoints      = 20
 	fidelityPoints    = 30
 	fidelityTolerance = 0.01
-	yearRuns          = 20
-	yearMinPoints     = 1400
-	yearMaxP95        = time.Second
-	writerOutage      = 45 * time.Second
-	simulatorOutage   = 20 * time.Second
-	chaosSettle       = 3 * time.Second
-	chaosMaxGapSecs   = 2
+	// liveGraceSeconds is how old the newest raw point may be. Seeded history
+	// is minutes old; a live scraper + writer keeps this under ~15 s.
+	liveGraceSeconds = 30
+	yearRuns         = 20
+	yearMinPoints    = 1400
+	yearMaxP95       = time.Second
+	writerOutage     = 45 * time.Second
+	simulatorOutage  = 20 * time.Second
+	chaosSettle      = 3 * time.Second
+	chaosMaxGapSecs  = 2
 )
 
 // tiersCheckRanges are the ranges the tiers check exercises. Contract 04 also
@@ -213,15 +216,24 @@ func (d deps) checkIngest(ctx context.Context) (string, error) {
 
 		counts = make(map[string]int, len(names))
 		short := make([]string, 0, len(names))
+		stale := make([]string, 0, len(names))
+		freshAfter := time.Now().Unix() - liveGraceSeconds
 		for _, name := range names {
-			count := len(response.points(name))
+			points := response.points(name)
+			count := len(points)
 			counts[name] = count
 			if count < minRawPoints {
 				short = append(short, fmt.Sprintf("%s=%d", name, count))
 			}
+			if count > 0 && points[count-1].ts() < freshAfter {
+				stale = append(stale, fmt.Sprintf("%s=%d", name, points[count-1].ts()))
+			}
 		}
 		if len(short) > 0 {
 			return fmt.Errorf("fewer than %d raw points: %s", minRawPoints, strings.Join(short, ", "))
+		}
+		if len(stale) > 0 {
+			return fmt.Errorf("no live sample in the last %ds (newest: %s)", liveGraceSeconds, strings.Join(stale, ", "))
 		}
 		return nil
 	})

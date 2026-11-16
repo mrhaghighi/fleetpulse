@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"go.yaml.in/yaml/v3"
+	"gopkg.in/yaml.v3"
 )
 
 const (

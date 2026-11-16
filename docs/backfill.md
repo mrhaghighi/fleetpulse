@@ -135,8 +135,10 @@ CLICKHOUSE_ADDR=127.0.0.1:9000 \
   go run ./cmd/backfill --devices 20 --rollup-days 365 --force
 ```
 
-The `Makefile`'s `backfill-year` target is still a placeholder. Until it is
-wired, run the `--rollup-days 365` command above directly.
+The supported one-command path is `make backfill-year`. It runs the same
+`--rollup-days 365 --force` command inside the Compose `seed` service and passes
+`SIM_DEVICES`, `SIM_SEED` and `SIM_FANLESS_RATIO` from `.env`; use the direct
+command above when running against a local ClickHouse without Compose.
 
 ## Tests
 

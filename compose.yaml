@@ -68,7 +68,10 @@ services:
         soft: 262144
         hard: 262144
     healthcheck:
-      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      # Check the application table, not just the server: on a first start the
+      # init SQL runs asynchronously, and a bare SELECT 1 can pass before the
+      # schema exists, letting the one-shot seed fail once and never retry.
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1 FROM fleetpulse.samples_1h LIMIT 1"]
       interval: 5s
       timeout: 5s
       retries: 12

@@ -38,7 +38,7 @@ Expected results:
 
 ### Open the UI
 
-Open <http://localhost:8080>. Type `sim` in the device search, select `sim-00001`, and pick a range. `5m`, `15m`, `1h`, `6h`, `24h` and `7d` have data after the first start. `30d`, `90d` and `1y` need the one-year backfill:
+Open <http://localhost:8080>. Type `sim` in the device search, select `sim-00001`, and pick a range. `5m`, `15m`, `1h`, `6h`, `24h` and `7d` have data after the first start. `30d`, `90d` and `1y` initially show only the seeded 14 days; run the one-year backfill to fill them:
 
 ```sh
 make backfill-year
@@ -89,6 +89,9 @@ Data moves in one direction: exporters hold a 300-second buffer, the scraper kee
 | [Simulator](docs/simulator.md) | virtual fleet API and signal model |
 | [Backfill](docs/backfill.md) | how history is generated and written |
 | [Testing](docs/testing.md) | unit tests, smoke test, chaos checks |
+| [Design](docs/design.md) | decisions, capacity, growth, migration and operations |
+| [AI usage](docs/ai-usage.md) | where AI helped and what was rejected |
+| [Load-test results](docs/loadtest/results/2026-11-15-8gb-laptop/report.md) | archived run, graphs and hardware |
 | [Web UI](docs/ui.md) | UI behaviour and manual checklist |
 | [Load test](docs/loadtest/README.md) | capacity test, graphs and diagnosis |
 | [Exporter on Linux](docs/exporter/linux.md) | systemd install |

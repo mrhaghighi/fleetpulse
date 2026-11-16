@@ -58,12 +58,15 @@ func TestEvaluateVerdict(t *testing.T) {
 	t.Parallel()
 
 	healthy := verdictInput{
-		E2ELagP95MS:      100,
-		ConsumerPending:  []Point{{X: 0, Y: 10}, {X: 30, Y: 4}},
-		ScrapesOK:        1000,
-		ScrapesFailed:    0,
-		Query1yP95MS:     200,
-		TruncatedScrapes: 0,
+		E2ELagP95MS:         100,
+		ConsumerPending:     []Point{{X: 0, Y: 10}, {X: 30, Y: 4}},
+		RowsPerSecond:       100,
+		TargetRowsPerSecond: 100,
+		ScrapesOK:           1000,
+		ScrapesFailed:       0,
+		QueryTotal:          1000,
+		Query1yP95MS:        200,
+		TruncatedScrapes:    0,
 	}
 
 	tests := []struct {
@@ -76,6 +79,24 @@ func TestEvaluateVerdict(t *testing.T) {
 			name:        "all conditions pass",
 			input:       healthy,
 			wantHealthy: true,
+		},
+		{
+			name: "no rows inserted",
+			input: func() verdictInput {
+				in := healthy
+				in.RowsPerSecond = 0
+				return in
+			}(),
+			contains: "rows/s",
+		},
+		{
+			name: "no query samples",
+			input: func() verdictInput {
+				in := healthy
+				in.QueryTotal = 0
+				return in
+			}(),
+			contains: "no query samples",
 		},
 		{
 			name: "lag p95 at the limit",

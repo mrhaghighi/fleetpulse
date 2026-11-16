@@ -63,8 +63,9 @@ curl "http://localhost:8080/api/v1/series?devices=sim-00001&sensors=cpu_usage&ra
 Both responses contain a `series` array with `points` shaped
 `[timestamp, avg, min, max]`. The seed writes three days of raw samples plus
 fourteen days of one-minute and one-hour rollups, so ranges up to `7d` have
-data immediately. `30d` and `1y` stay empty until the one-year backfill below
-has run.
+data immediately. `30d`, `90d` and `1y` return the seeded tail until the
+one-year backfill below has run; they are not empty, but they do not cover the
+full requested window.
 
 ## Configuration
 
@@ -187,5 +188,6 @@ Later builds use Docker's layer cache.
 `MEM_LIMIT` in `.env` after checking each service's needs. The default is
 unlimited.
 
-**Everything is up but `1y` is empty.** The initial seed only writes fourteen
-days of hourly rollups. Run `make backfill-year`.
+**`30d`/`90d`/`1y` look short.** The initial seed only writes fourteen days of
+hourly rollups, so those ranges show only that tail. Run `make backfill-year`
+for the full window.

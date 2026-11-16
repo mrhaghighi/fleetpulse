@@ -1,0 +1,13 @@
+{
+  "cpu_model": "Apple M2",
+  "cpu_cores": 8,
+  "ram_bytes": 8589934592,
+  "disk_device": "/dev/disk3s1s1",
+  "disk_filesystem": "apfs",
+  "disk_type": "unknown",
+  "os": "darwin 26.1",
+  "arch": "arm64",
+  "docker_version": "29.9.3",
+  "go_version": "go1.27.4",
+  "collected_at": 1794732445
+}

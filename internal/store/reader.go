@@ -45,14 +45,15 @@ type DeviceInfo struct {
 	LastSeen int64  `json:"last_seen"`
 }
 
-// The raw and rollup queries are contract 04 verbatim except that the WHERE
-// clause of the devices query qualifies the columns: unqualified `hostname`
-// resolves to the argMax alias and ClickHouse rejects aggregates in WHERE.
+// The raw and rollup queries are contract 04 with unqualified table names, so
+// they use the database from the connection (CLICKHOUSE_DB). The devices WHERE
+// clause qualifies its columns: unqualified `hostname` resolves to the argMax
+// alias and ClickHouse rejects aggregates in WHERE.
 const (
 	seriesRawQuery = `SELECT device_id, toString(sensor) AS sensor,
        toUInt32(toStartOfInterval(ts, INTERVAL {step:UInt32} SECOND)) AS t,
        avg(value) AS avg_v, min(value) AS min_v, max(value) AS max_v
-FROM fleetpulse.samples_raw
+FROM samples_raw
 WHERE device_id IN {devices:Array(String)} AND sensor IN {sensors:Array(String)}
   AND ts >= {from:DateTime} AND ts < {to:DateTime}
 GROUP BY device_id, sensor, t ORDER BY device_id, sensor, t`
@@ -60,7 +61,7 @@ GROUP BY device_id, sensor, t ORDER BY device_id, sensor, t`
 	seriesOneMinuteQuery = `SELECT device_id, toString(sensor) AS sensor,
        toUInt32(toStartOfInterval(bucket, INTERVAL {step:UInt32} SECOND)) AS t,
        sum(sum_v) / sum(cnt) AS avg_v, min(min_v) AS min_v, max(max_v) AS max_v
-FROM fleetpulse.samples_1m
+FROM samples_1m
 WHERE device_id IN {devices:Array(String)} AND sensor IN {sensors:Array(String)}
   AND bucket >= {from:DateTime} AND bucket < {to:DateTime}
 GROUP BY device_id, sensor, t ORDER BY device_id, sensor, t`
@@ -68,22 +69,22 @@ GROUP BY device_id, sensor, t ORDER BY device_id, sensor, t`
 	seriesOneHourQuery = `SELECT device_id, toString(sensor) AS sensor,
        toUInt32(toStartOfInterval(bucket, INTERVAL {step:UInt32} SECOND)) AS t,
        sum(sum_v) / sum(cnt) AS avg_v, min(min_v) AS min_v, max(max_v) AS max_v
-FROM fleetpulse.samples_1h
+FROM samples_1h
 WHERE device_id IN {devices:Array(String)} AND sensor IN {sensors:Array(String)}
   AND bucket >= {from:DateTime} AND bucket < {to:DateTime}
 GROUP BY device_id, sensor, t ORDER BY device_id, sensor, t`
 
 	devicesQuery = `SELECT device_id, argMax(hostname, updated_at) AS hostname, argMax(os, updated_at) AS os,
        argMax(arch, updated_at) AS arch, max(last_seen) AS last_seen
-FROM fleetpulse.devices
-WHERE {q:String} = '' OR positionCaseInsensitive(fleetpulse.devices.device_id, {q:String}) > 0
-   OR positionCaseInsensitive(fleetpulse.devices.hostname, {q:String}) > 0
+FROM devices
+WHERE {q:String} = '' OR positionCaseInsensitive(devices.device_id, {q:String}) > 0
+   OR positionCaseInsensitive(devices.hostname, {q:String}) > 0
 GROUP BY device_id ORDER BY device_id LIMIT {limit:UInt32} OFFSET {offset:UInt32}`
 
 	devicesCountQuery = `SELECT count() FROM (
-    SELECT device_id FROM fleetpulse.devices
-    WHERE {q:String} = '' OR positionCaseInsensitive(fleetpulse.devices.device_id, {q:String}) > 0
-       OR positionCaseInsensitive(fleetpulse.devices.hostname, {q:String}) > 0
+    SELECT device_id FROM devices
+    WHERE {q:String} = '' OR positionCaseInsensitive(devices.device_id, {q:String}) > 0
+       OR positionCaseInsensitive(devices.hostname, {q:String}) > 0
     GROUP BY device_id
 )`
 )

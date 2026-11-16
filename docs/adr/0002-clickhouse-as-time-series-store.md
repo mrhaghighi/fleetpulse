@@ -50,5 +50,5 @@ a cluster; the migration path is to swap the store behind the query API
 
 The load test on an Apple M2 with 8 GiB ran at **699.0 rows/s for 100 devices**
 and **1,356.5 rows/s for 200 devices**, with ClickHouse the busiest container at
-**393.9%** and **530%** CPU. The 70,000 rows/s design target is **TBD (measure in
-T21)** on suitable hardware; the observed ceiling is this laptop, not the store.
+**393.9%** and **530%** CPU. The 70,000 rows/s design target was not measured on
+suitable hardware; the observed ceiling is this laptop, not the store.

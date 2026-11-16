@@ -2,7 +2,7 @@
 
 `loadtest` finds the largest fleet this machine sustains and shows why it stops.
 It changes the simulator fleet size, holds each stage, samples the stack every
-five seconds, runs query clients, and writes a CSV, three JSON files, four
+five seconds, runs query clients, and writes a CSV, two JSON files, four
 graphs and a Markdown report.
 
 ## Run it
@@ -35,7 +35,7 @@ a directory explicitly. The run writes:
 | `response_time.png` | query p50/p95 per range class per stage; scrape and insert p95 |
 | `resources.png` | CPU % and memory for every FleetPulse container |
 | `lag.png` | writer `e2e_lag_ms` p95 and `consumer_pending` |
-| `report.md` | hardware table, stage table and the filled "where it broke" paragraph |
+| `report.md` | hardware table, stage table and the "where it broke" analysis template (the author completes the diagnosis) |
 
 Default settings:
 

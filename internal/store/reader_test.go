@@ -17,9 +17,9 @@ func TestSeriesSQLWhitelistsTiers(t *testing.T) {
 		table string
 		want  string
 	}{
-		{table: TableRaw, want: "fleetpulse.samples_raw"},
-		{table: TableOneMinute, want: "fleetpulse.samples_1m"},
-		{table: TableOneHour, want: "fleetpulse.samples_1h"},
+		{table: TableRaw, want: "FROM samples_raw"},
+		{table: TableOneMinute, want: "FROM samples_1m"},
+		{table: TableOneHour, want: "FROM samples_1h"},
 	}
 
 	for _, tt := range tests {

@@ -5,7 +5,7 @@ FleetPulse has two layers of tests:
 | layer | command | needs |
 |-------|---------|-------|
 | unit tests | `make test` | Go only |
-| end-to-end smoke test | `make smoke` | Docker, a free localhost port 8080 |
+| end-to-end smoke test | `make smoke` | Docker and the Go 1.27.4 toolchain (`go run ./cmd/smoketest`) |
 
 The smoke test starts the real stack, drives it through its public API, and
 stops or restarts containers to prove that no data is lost. It is the check to

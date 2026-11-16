@@ -161,9 +161,10 @@ user and password. Inside Compose they are set by `compose.yaml`; a local
 still served while `/readyz` fails; only reads that touch ClickHouse return
 `500`.
 
-## `1y` range is empty
+## `1y` range shows only a short tail
 
-**Symptom.** Ranges up to `7d` have data, `30d`, `90d` and `1y` are empty.
+**Symptom.** Ranges up to `7d` cover the window, but `30d`, `90d` and `1y` show
+only the last fourteen days.
 
 **Cause.** The first start seeds 14 days of history. The `1y` range reads
 `samples_1h`, which only has rows from the seed's 14-day rollup window. A full

@@ -335,8 +335,10 @@ VERSION=0.2.0 docker compose up -d
 docker compose ps
 ```
 
-- `docker compose pull nats clickhouse` updates the two published images.
-  Application images are built locally, so `docker compose pull` without
+- `docker compose pull nats clickhouse` re-fetches the pinned tags; to move to a
+  newer release, change the `nats:` and `clickhouse/clickhouse-server:` tags in
+  `compose.yaml` first, then pull and up.
+- Application images are built locally, so `docker compose pull` without
   service names fails on them.
 - `VERSION` changes the application image tag and the version reported by
   `/statusz` and `--version`.

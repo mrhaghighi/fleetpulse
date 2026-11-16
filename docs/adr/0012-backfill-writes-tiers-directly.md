@@ -37,8 +37,10 @@ it evaluates 60 times, one minute apart, and multiplies by 3,600.
 
 - **Write a year of raw rows and let the views roll up.** Simple, and it needs no
   special tool logic. Rejected because it writes about 220 million rows per
-  device instead of about 3.7 million rollup rows, and the materialized views
-  would process every one of them.
+  device instead of about 1 million rollup rows per device (0.9 million
+  one-minute rows for 90 days plus 0.06 million hourly rows for a year, about
+  19 million for the 20-device seed), and the materialized views would process
+  every one of them.
 - **Backfill raw only for the retention window, then run scheduled rollups.**
   Still needs a job to aggregate history, and the 1m and 1h windows have
   different widths.

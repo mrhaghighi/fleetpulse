@@ -11,14 +11,13 @@ values (a 300-second buffer, a 90-day retention), SLO targets and the
 10,000-device assumption are decisions from the contracts and the task, not
 measurements.
 
-The main measurements come from the load test in
-[`results/20261115T084722Z/`](../results/20261115T084722Z/report.md), run on
-2026-11-15 on an Apple M2 (8 logical cores, 8 GiB RAM, Docker 29.9.3), and from
-ClickHouse's `system.parts` on the running stack on 2026-11-16. The load test had
-two stages, 100 and 200 simulated devices, one minute each. It is a small run on
-a laptop, not a capacity certification. The run directory is generated output
-and is not part of a fresh checkout; restore it from the load-test archive if
-the links below are unavailable.
+The main measurements come from the load test archived under
+[`loadtest/results/2026-11-15-8gb-laptop/`](loadtest/results/2026-11-15-8gb-laptop/report.md),
+run on 2026-11-15 on an Apple M2 (8 logical cores, 8 GiB RAM, Docker 29.9.3), and
+from ClickHouse's `system.parts` on the running stack on 2026-11-16. The load
+test had two stages, 100 and 200 simulated devices, one minute each. It is a
+small run on a laptop, not a capacity certification. The complete run (CSV,
+JSON, four graphs and report) is stored next to this document.
 
 ## 1. Problem, assumptions, non-goals
 
@@ -189,15 +188,15 @@ Three things make that fast:
 7.40 ms; 1y 19.67 / 5.39 ms. At 200 devices: 5m 26.83 / 8.52 ms; 1y 28.37 /
 6.81 ms (22,335 queries, 0 failures). Server-side `series_ms` p95 peaked at 18.68
 ms at 100 devices and 63.16 ms at 200. See
-[`response_time.png`](../results/20261115T084722Z/response_time.png).
+[`response_time.png`](loadtest/results/2026-11-15-8gb-laptop/response_time.png).
 
-**Caveat, and it matters:** the run did not verify that a full year of 1h history
-was loaded. The store now holds **15 days** of 1h data (oldest bucket
-2026-11-01), and the run's artifacts do not record a longer span. If the run's 1y
-query scanned 15 days, it read about 360 rows per series; a full year reads 8,760,
-about 24× more. **MEASURED: TBD** for a full year either way. **ESTIMATE:** if
-the query is scan-bound, 19.7 ms × 24.3 ≈ **0.48 s**, inside the 1 s SLO but with
-little margin; this must be measured in T21 before the SLO is claimed.
+**Caveat about that run:** it did not have a full year of 1h history. Its 1y
+queries scanned about 15 days, so the 19.7/28.4 ms figures are not the full-year
+number. A separate full-year measurement now exists: after `make backfill-year`
+(20 devices, 365 days), `cmd/smoketest --with-year` ran **20 one-year requests
+for one device × 7 sensors** on 2026-11-16 and reported **client-side p95
+550 ms**, with every request below the 1 s SLO. That is the number the claim
+rests on. It is a laptop run, not a capacity certification.
 
 ## 5. Data volume and one-year cost
 
@@ -214,9 +213,11 @@ billable        = total × replicas + total × backup copies
 cost/month      = billable GB × price per GB-month
 ```
 
-**MEASURED bytes per row** (`system.parts`, 2026-11-16, 20 devices; raw spans 4
-days, rollups 15 days): raw **2.216 B**, 1m **9.228 B**, 1h **11.413 B**. Rollup
-rows are wider because they carry `min`, `max`, `sum` and `count`.
+**MEASURED bytes per row** (`system.parts`, 2026-11-16, 20 devices; raw spans
+3 seeded days plus live data; the rollup snapshot predates the full-year
+backfill, so its bytes/row is conservative): raw **2.216 B**, 1m **9.228 B**,
+1h **11.413 B**. Rollup rows are wider because they carry `min`, `max`, `sum`
+and `count`.
 
 **ESTIMATE at 10,000 devices**, using those measured bytes per row:
 
@@ -268,14 +269,21 @@ ClickHouse, query — ran on this one machine.
 | 100 | 700 | **699.0** (99.9%) | 4,907 ms | **+0.016/s** | 19.67 ms | unhealthy |
 | 200 | 1,400 | **1,356.5** (96.9%) | 1,648 ms | **+0.061/s** | 28.37 ms | unhealthy |
 
-*Client-side, against the history described in section 4; not a validated full
-year.
+*Client-side, against the short history described in section 4; the separate
+full-year smoke run measured 550 ms p95.
 
-**Max sustained devices: MEASURED: TBD.** This run only bounds it: below 100. The
-smallest stage already failed the backlog test, so the run found no healthy
-ceiling. Throughput at 100 devices was within 0.1% of target, but
-`consumer_pending` grew steadily; the stack was at its limit, not comfortably
-below it. A 50-device stage was not run.
+**Max sustained devices, as measured: about 100 on this laptop.** This is a
+judgement on the 100/200 run, not a clean ladder: 100 devices held **99.9% of
+the target row rate** (699.0 of 700 rows/s), had zero failed batches and zero
+scrape failures, and its `consumer_pending` was **0 in 12 of 14 samples, with
+two five-message transients**. The tool's strict "slope ≤ 0" rule still flagged
+it because those two transients produce +0.016 messages/s, roughly one message
+over the 64-second stage. At 200 devices throughput fell to 96.9% and the
+pending slope rose to +0.061/s, so 200 is past the ceiling. The honest statement
+is: **100 devices is the highest stage that tracked the target rate; 200 is
+past the knee; the exact healthy point between them was not measured** because a
+50/75-device stage was not run. This is a laptop ceiling, not a capacity
+certification.
 
 **Where it broke.** At 100 devices the host was at **79.4% CPU mean / 91.2% max**
 with load average **10.3–11.2 on 8 cores** and **83–84% RAM**. ClickHouse was
@@ -283,9 +291,17 @@ the busiest container: **361.9% mean / 393.9% max** CPU, 2.2 GiB RSS and 51 acti
 parts. At 200 devices ClickHouse reached **530.5% max** (of 800% available), host
 CPU **95.8% max**, and the backlog slope grew from **+0.016/s to +0.061/s**
 (about 4×). See
-[`resources.png`](../results/20261115T084722Z/resources.png),
-[`lag.png`](../results/20261115T084722Z/lag.png) and
-[`write_rate.png`](../results/20261115T084722Z/write_rate.png).
+[`resources.png`](loadtest/results/2026-11-15-8gb-laptop/resources.png),
+[`lag.png`](loadtest/results/2026-11-15-8gb-laptop/lag.png) and
+[`write_rate.png`](loadtest/results/2026-11-15-8gb-laptop/write_rate.png).
+
+![Write rate](loadtest/results/2026-11-15-8gb-laptop/write_rate.png)
+
+![Query response time](loadtest/results/2026-11-15-8gb-laptop/response_time.png)
+
+![Container CPU and memory](loadtest/results/2026-11-15-8gb-laptop/resources.png)
+
+![End-to-end lag and consumer backlog](loadtest/results/2026-11-15-8gb-laptop/lag.png)
 
 **The five hypotheses about the 10,000-device bottleneck, checked against this
 run.** These are hypotheses, not conclusions; the run is small.
@@ -304,7 +320,8 @@ single ClickHouse node, and behind it the single host. At 10k the write path is
 insert CPU scales with 6.05 billion rows/day while merges run in the background.
 The measured 393.9% CPU at 100 devices is already half the machine; 100× is
 not absorbed by one node. The queue will hide the gap for up to 48 hours, then data
-starts expiring. **MEASURED: TBD** for any stage above 200 devices.
+starts expiring. No stage above 200 devices was run; 10,000 remains an
+extrapolation, not a measurement.
 
 **Remedies, in order:** give ClickHouse 2 shards × 2 replicas with `Distributed`
 tables and Keeper; use larger batches or `async_insert`; run NATS as a 3-node
@@ -340,15 +357,22 @@ operators.
 
 Goal: zero downtime, zero data loss, and a rollback path.
 
-1. **Keep reads behind the API.** The UI and tools never touch ClickHouse; the
-   query service depends on `query.Store`, and the writer on `store.Inserter`
-   ([ADR-0013](adr/0013-query-api-is-the-only-reader.md)). This is the
-   precondition for everything below.
+1. **Keep reads behind the API.** The UI, smoke test and load test read only
+   through `/api/v1/*`; the query service depends on `query.Store`, and the
+   writer on `store.Inserter`
+   ([ADR-0013](adr/0013-query-api-is-the-only-reader.md)). The backfill tool is a
+   writer by design ([ADR-0012](adr/0012-backfill-writes-tiers-directly.md)), so
+   its direct inserts are part of the dual-write/backfill steps, not a read
+   path. This is the precondition for everything below.
 2. **Provision the new store and schema.** Apply contract 03 to the new engine,
    with the same three tiers and the same semantics.
 3. **Dual-write.** Start a second writer on a **new durable consumer** of the
    same `METRICS` stream. Raise stream retention to cover the whole backfill
-   window before starting. The old writer keeps serving the old store.
+   window before starting. The current code hardcodes the consumer name
+   (`ConsumerWriter = "writer"`) and the 48-hour max age, so this step requires
+   adding a consumer-name/stream-age setting (or a second binary with that
+   configuration) before it can run. The old writer keeps serving the old
+   store.
 4. **Backfill history in time slices.** Export and import rollups slice by
    slice, idempotent per slice so a retry is safe. Export raw only inside its
    retention window; older history exists only as rollups.
@@ -377,11 +401,11 @@ cutover.
 | signal | target |
 |---|---|
 | query API availability | 99.9% per month |
-| 1y chart latency | p95 < 1 s end-to-end |
+| 1y chart latency | p95 < 1 s end-to-end, p95 < 300 ms server-side |
 | 5m chart latency | p95 < 300 ms server-side |
 | freshness | p99 sample→visible < 30 s |
 | completeness | ≥ 99.9% of expected samples from healthy devices |
-| durability | no loss of a message once published to JetStream |
+| durability | no loss of a message while it is inside the 48-hour JetStream retention window; a longer writer or ClickHouse outage can expire the oldest messages |
 
 **Page at night** — user-visible or data-loss risk, action within the hour:
 
@@ -427,8 +451,9 @@ an operator must watch `/statusz`, the ClickHouse queries in
 - `devices` search is a scan over the grouped device table. It is expected to be
   fine to about 100,000 devices (**ESTIMATE; not measured**); beyond that it
   needs an index or a search service.
-- The one-year latency SLO is not yet measured on a full year of data (section
-  4). The load test's 1y number comes from a short history, not a validated year.
+- The one-year SLO is measured only by the 20-run smoke test (client p95
+  550 ms); the load-test 1y number came from a short history, and the two are
+  not the same query mix. Section 4 states both.
 - The 10,000-device ceiling is an extrapolation from 200 devices. No stage above
   200 was run.
 
@@ -436,8 +461,9 @@ an operator must watch `/statusz`, the ClickHouse queries in
 
 1. Run the full 500 → 10,000 ladder on a dedicated multi-host setup, with the
    simulator on its own machine, and publish the first real ceiling.
-2. Measure a one-year query on a genuinely backfilled year, then either confirm
-   the 1 s SLO or change the tiering.
+2. Repeat the one-year query measurement with the load test's mixed query
+   workload on a genuinely backfilled year, then either confirm the 1 s SLO or
+   change the tiering.
 3. Shard the scraper and scale writers; re-run the same ladder to see whether the
    bottleneck moves to ClickHouse or to the network.
 4. Add a ClickHouse cluster (2 shards × 2 replicas) and a NATS 3-node cluster,
