@@ -55,20 +55,24 @@ make reset    # stop containers and delete the volumes
 
 ```mermaid
 flowchart LR
-    subgraph hosts["Monitored hosts"]
-        E1["exporter :9100"]
-        E2["exporter :9100"]
-    end
+    E1["exporter :9100"]
+    E2["exporter :9100"]
+    S["simulator :9200 (virtual exporters)"]
+    SC["scraper :9300"]
+    N["NATS JetStream :4222"]
+    W["writer :9400"]
+    CH["ClickHouse (raw, 1m, 1h)"]
+    Q["query + UI :8080"]
+    U["browser"]
 
-    S["simulator :9200<br/>virtual exporters"] -->|"GET /v1/samples"| SC["scraper :9300"]
-    E1 -->|"GET /v1/samples"| SC
-    E2 -->|"GET /v1/samples"| SC
-
-    SC -->|"publish metrics.samples"| N["NATS JetStream :4222"]
-    N -->|"pull consumer writer"| W["writer :9400"]
-    W -->|"batch INSERT"| CH[("ClickHouse<br/>samples_raw, 1m, 1h")]
-    Q["query + UI :8080"] -->|"SELECT"| CH
-    U["browser"] -->|"GET /api/v1/..."| Q
+    E1 -- "GET /v1/samples" --> SC
+    E2 -- "GET /v1/samples" --> SC
+    S -- "GET /v1/samples" --> SC
+    SC -- "publish metrics.samples" --> N
+    N -- "pull consumer writer" --> W
+    W -- "batch INSERT" --> CH
+    Q -- "SELECT" --> CH
+    U -- "GET /api/v1/..." --> Q
 ```
 
 Data moves in one direction: exporters hold a 300-second buffer, the scraper keeps a cursor per target, NATS keeps a 48-hour replay buffer, and the writer acknowledges a message only after ClickHouse accepted the insert. See [Architecture](docs/architecture.md) for the failure behaviour of each hop.

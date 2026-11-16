@@ -28,18 +28,22 @@ Tools that are not part of the running stack:
 
 ```mermaid
 flowchart LR
-    subgraph devices["Devices"]
-        E["exporter<br/>7 sensors, 1 s buffer 300 s"]
-        S["simulator<br/>virtual exporters"]
-    end
+    E["exporter (7 sensors, 1 s, buffer 300 s)"]
+    S["simulator (virtual exporters)"]
+    SC["scraper (cursor per target)"]
+    N["NATS JetStream (METRICS 48 h, METRICS_DLQ 7 d)"]
+    W["writer (batch 50000 rows or 2 s)"]
+    CH["ClickHouse (samples_raw / samples_1m / samples_1h)"]
+    Q["query + UI :8080"]
+    B["backfill"]
 
-    E -->|"1. GET /v1/samples?since=N"| SC["scraper<br/>cursor per target"]
-    S -->|"1. GET /v1/samples?since=N"| SC
-    SC -->|"2. publish metrics.samples"| N["NATS JetStream<br/>METRICS 48 h, METRICS_DLQ 7 d"]
-    N -->|"3. pull batch"| W["writer<br/>batch 50000 rows or 2 s"]
-    W -->|"4. INSERT"| CH[("ClickHouse<br/>samples_raw / samples_1m / samples_1h")]
-    CH -->|"5. SELECT per tier"| Q["query + UI<br/>:8080"]
-    B["backfill"] -->|"direct INSERT"| CH
+    E -- "1. GET /v1/samples?since=N" --> SC
+    S -- "1. GET /v1/samples?since=N" --> SC
+    SC -- "2. publish metrics.samples" --> N
+    N -- "3. pull batch" --> W
+    W -- "4. INSERT" --> CH
+    CH -- "5. SELECT per tier" --> Q
+    B -- "direct INSERT" --> CH
 ```
 
 1. Each exporter samples the host every second and keeps 300 seconds in memory.

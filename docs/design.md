@@ -56,26 +56,24 @@ describes alert *rules*; no alerting daemon ships in v1.
 
 ```mermaid
 flowchart LR
-  subgraph devices["Devices"]
-    E1[exporter]
-    E2[exporter]
-    S[simulator]
-  end
-  SC[scraper]
-  N[(NATS JetStream<br/>METRICS + DLQ)]
-  W[writer]
-  CH[(ClickHouse<br/>raw / 1m / 1h)]
-  Q[query API + UI]
-  B[backfill]
+  E1["exporter"]
+  E2["exporter"]
+  S["simulator"]
+  SC["scraper"]
+  N["NATS JetStream (METRICS + DLQ)"]
+  W["writer"]
+  CH["ClickHouse (raw / 1m / 1h)"]
+  Q["query API + UI"]
+  B["backfill"]
 
-  E1 -->|"pull /v1/samples every 10 s"| SC
-  E2 -->|pull| SC
-  S -->|pull| SC
-  SC -->|"1 msg / scrape"| N
-  N -->|durable consumer| W
-  W -->|batch insert| CH
-  B -->|direct tier writes| CH
-  Q -->|SQL| CH
+  E1 -- "pull /v1/samples every 10 s" --> SC
+  E2 -- "pull" --> SC
+  S -- "pull" --> SC
+  SC -- "1 msg / scrape" --> N
+  N -- "durable consumer" --> W
+  W -- "batch insert" --> CH
+  B -- "direct tier writes" --> CH
+  Q -- "SQL" --> CH
 ```
 
 **Exporter.** Samples the seven host sensors every second into a 300-second
